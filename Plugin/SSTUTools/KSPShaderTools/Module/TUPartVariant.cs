@@ -33,7 +33,8 @@ namespace KSPShaderTools
         [KSPField]
         public bool stockFairing = false;
         
-        private RecoloringData[] customColors;
+        private HSVRecoloringData[] customColorsHSV;
+        private RecoloringData[] customColorsRGB;
 
         private bool initialized = false;
 
@@ -47,7 +48,8 @@ namespace KSPShaderTools
         public override void OnSave(ConfigNode node)
         {
             base.OnSave(node);
-            saveColors(customColors);
+            saveColorsHSV(customColorsHSV);
+            saveColorsRGB(customColorsRGB);
             node.SetValue(nameof(persistentData), persistentData, true);
         }
 
@@ -227,14 +229,18 @@ namespace KSPShaderTools
         private void applyConfig(Transform root, TextureSet set, bool useSetColors, bool useIconShaders = false)
         {
             if (set == null) { return; }
-            RecoloringData[] colors = useSetColors? set.maskColors : customColors;
+            HSVRecoloringData[] colorsHSV = useSetColors? set.maskColorsHSV : customColorsHSV;
+            RecoloringData[] colorsRGB = useSetColors ? set.maskColorsRGB : customColorsRGB;
             if (useSetColors)
             {
-                customColors = set.maskColors;
-                saveColors(customColors);
+                customColorsHSV = set.maskColorsHSV;
+                saveColorsHSV(customColorsHSV);
+                customColorsRGB = set.maskColorsRGB;
+                saveColorsRGB(customColorsRGB);
             }
             //apply the texture set to the base model (and trusses?)
-            set.enable(root, colors, useIconShaders);
+            set.enableHSV(root, colorsHSV, useIconShaders);
+            set.enableRGB(root, colorsRGB, useIconShaders);
             if (stockFairing)
             {
                 TextureSetMaterialData tsmd = set.textureData[0];                
@@ -243,14 +249,23 @@ namespace KSPShaderTools
                 if (mpf != null)
                 {
                     Material mat;
+                    Material matC;
                     if (mpf.FairingMaterial != null && mpf.FairingConeMaterial != null)
                     {
                         mat = mpf.FairingMaterial;
                         tsmd.apply(mat, useIconShaders);
-                        tsmd.applyRecoloring(mat, colors);
-                        mat = mpf.FairingConeMaterial;
-                        tsmd.apply(mat, useIconShaders);
-                        tsmd.applyRecoloring(mat, colors);
+                        matC = mpf.FairingConeMaterial;
+                        tsmd.apply(matC, useIconShaders);
+                        if (HSVRecoloringData.isHSV)
+                        {
+                            tsmd.applyRecoloringHSV(mat, colorsHSV);
+                            tsmd.applyRecoloringHSV(matC, colorsHSV);
+                        }
+                        else
+                        {
+                            tsmd.applyRecoloringRGB(mat, colorsRGB);
+                            tsmd.applyRecoloringRGB(matC, colorsRGB);
+                        }
                     }
                     if (mpf.Panels != null && mpf.Panels.Count > 0)//cones are included in regular panels
                     {
@@ -259,10 +274,12 @@ namespace KSPShaderTools
                         {
                             mat = mpf.Panels[i].mat;
                             tsmd.apply(mat, useIconShaders);
-                            tsmd.applyRecoloring(mat, colors);
+                            if (HSVRecoloringData.isHSV) { tsmd.applyRecoloringHSV(mat, colorsHSV); }
+                            else { tsmd.applyRecoloringRGB(mat, colorsRGB); }
                             mat = mpf.Panels[i].go.GetComponent<Renderer>().material;
                             tsmd.apply(mat, useIconShaders);
-                            tsmd.applyRecoloring(mat, colors);
+                            if (HSVRecoloringData.isHSV) { tsmd.applyRecoloringHSV(mat, colorsHSV); }
+                            else { tsmd.applyRecoloringRGB(mat, colorsRGB); }
                         }
                     }
                 }                
@@ -274,9 +291,14 @@ namespace KSPShaderTools
             return new string[] { "Stock Variant" };
         }
 
-        public RecoloringData[] getSectionColors(string name)
+        public HSVRecoloringData[] getSectionColorsHSV(string name)
         {
-            return customColors;
+            return customColorsHSV;
+        }
+
+        public RecoloringData[] getSectionColorsRGB(string name)
+        {
+            return customColorsRGB;
         }
 
         public TextureSet getSectionTexture(string name)
@@ -284,12 +306,22 @@ namespace KSPShaderTools
             return string.IsNullOrEmpty(textureSet)? TexturesUnlimitedLoader.getModelShaderTextureSet(modelShaderSet) : TexturesUnlimitedLoader.getTextureSet(textureSet);
         }
 
-        public void setSectionColors(string name, RecoloringData[] colors)
+        public void setSectionColorsHSV(string name, HSVRecoloringData[] colors)
         {
             this.actionWithSymmetry(m =>
             {
-                m.customColors = colors;
-                m.saveColors(m.customColors);
+                m.customColorsHSV = colors;
+                m.saveColorsHSV(m.customColorsHSV);
+                m.applyConfig(m.part.transform.FindRecursive("model"), m.getSet(), false, false);
+            });
+        }
+
+        public void setSectionColorsRGB(string name, RecoloringData[] colors)
+        {
+            this.actionWithSymmetry(m =>
+            {
+                m.customColorsRGB = colors;
+                m.saveColorsRGB(m.customColorsRGB);
                 m.applyConfig(m.part.transform.FindRecursive("model"), m.getSet(), false, false);
             });
         }
@@ -300,19 +332,37 @@ namespace KSPShaderTools
             {
                 string[] colorSplits = data.Split(';');
                 int len = colorSplits.Length;
-                customColors = new RecoloringData[len];
+                customColorsHSV = new HSVRecoloringData[len];
+                customColorsRGB = new RecoloringData[len];
                 for (int i = 0; i < len; i++)
                 {
-                    customColors[i] = RecoloringData.ParsePersistence(colorSplits[i]);
+                    customColorsHSV[i] = HSVRecoloringData.ParsePersistence(colorSplits[i]);
+                    customColorsRGB[i] = RecoloringData.ParsePersistence(colorSplits[i]);
                 }
             }
-            else if(customColors == null)
+            else if(customColorsHSV == null)
             {
-                customColors = new RecoloringData[3];
+                customColorsHSV = new HSVRecoloringData[3];
+            }
+            else if (customColorsRGB == null)
+            {
+                customColorsRGB = new RecoloringData[3];
             }
         }
 
-        private void saveColors(RecoloringData[] colors)
+        private void saveColorsHSV(HSVRecoloringData[] colors)
+        {
+            if (colors == null || colors.Length == 0) { return; }
+            int len = colors.Length;
+            string data = string.Empty;
+            for (int i = 0; i < len; i++)
+            {
+                if (i > 0) { data = data + ";"; }
+                data = data + colors[i].getPersistentData();
+            }
+            persistentData = data;
+        }
+        private void saveColorsRGB(RecoloringData[] colors)
         {
             if (colors == null || colors.Length == 0) { return; }
             int len = colors.Length;

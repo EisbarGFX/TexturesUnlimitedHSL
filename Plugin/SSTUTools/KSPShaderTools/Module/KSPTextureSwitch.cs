@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace KSPShaderTools
 {
@@ -122,7 +123,8 @@ namespace KSPShaderTools
                 currentTextureSet = allSets[0].name;
             }
             this.updateUIChooseOptionControl(nameof(currentTextureSet), textureSets.getTextureSetNames(), textureSets.getTextureSetTitles(), true, currentTextureSet);
-            textureSets.enableCurrentSet(getModelTransforms(), false);
+            textureSets.enableCurrentSetHSV(getModelTransforms(), false);
+            textureSets.enableCurrentSetRGB(getModelTransforms(), false);
             Fields[nameof(currentTextureSet)].guiName = sectionName;
         }
 
@@ -211,9 +213,19 @@ namespace KSPShaderTools
         /// </summary>
         /// <param name="name"></param>
         /// <returns></returns>
-        public RecoloringData[] getSectionColors(string name)
+        public HSVRecoloringData[] getSectionColorsHSV(string name)
         {
-            return textureSets.customColors;
+            return textureSets.customColorsHSV;
+        }
+        /// <summary>
+        /// Return the user-specified recoloring values for the input section name.
+        /// In this implementation the input name is ignored, and it returns the current user colors of this texture-switch module.
+        /// </summary>
+        /// <param name="name"></param>
+        /// <returns></returns>
+        public RecoloringData[] getSectionColorsRGB(string name)
+        {
+            return textureSets.customColorsRGB;
         }
         
         /// <summary>
@@ -221,13 +233,27 @@ namespace KSPShaderTools
         /// Input section name is ignored as texture switch module only has a single section.
         /// </summary>
         /// <param name="name"></param>
-        /// <param name="colors"></param>
-        public void setSectionColors(string name, RecoloringData[] colors)
+        /// <param name="colors">HSV</param>
+        public void setSectionColorsHSV(string name, HSVRecoloringData[] colors)
         {
             this.actionWithSymmetry(m => 
             {
-                m.textureSets.setCustomColors(colors);
-                m.textureSets.applyRecoloring(m.getModelTransforms(), colors);
+                m.textureSets.setCustomColorsHSV(colors);
+                m.textureSets.applyRecoloringHSV(m.getModelTransforms(), colors);
+            });
+        }
+        /// <summary>
+        /// Set the input recoloring colors to the texture set and update persistent data. 
+        /// Input section name is ignored as texture switch module only has a single section.
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="colors">RGBA</param>
+        public void setSectionColorsRGB(string name, RecoloringData[] colors)
+        {
+            this.actionWithSymmetry(m =>
+            {
+                m.textureSets.setCustomColorsRGB(colors);
+                m.textureSets.applyRecoloringRGB(m.getModelTransforms(), colors);
             });
         }
 
@@ -253,7 +279,8 @@ namespace KSPShaderTools
             if (textureSets == null) { return; }
             //TODO - validate input texture set name; log error if invalid
             currentTextureSet = name;
-            textureSets.enableCurrentSet(getModelTransforms(), userInput);
+            textureSets.enableCurrentSetHSV(getModelTransforms(), userInput);
+            textureSets.enableCurrentSetRGB(getModelTransforms(), userInput);
             TextureCallbacks.onTextureSetChanged(part);
             if (symmetry)
             {
@@ -305,7 +332,8 @@ namespace KSPShaderTools
 
         internal TextureSet[] textureSets;
 
-        internal RecoloringData[] customColors;
+        internal HSVRecoloringData[] customColorsHSV;
+        internal RecoloringData[] customColorsRGB;
 
         private string currentTextureSetName
         {
@@ -343,65 +371,126 @@ namespace KSPShaderTools
         /// <summary>
         /// Updates the internal stored values and persistent values for recoloring data.  Does NOT apply the new colors.
         /// </summary>
-        /// <param name="colors"></param>
-        public void setCustomColors(RecoloringData[] colors)
+        /// <param name="colors">HSV</param>
+        public void setCustomColorsHSV(HSVRecoloringData[] colors)
         {
-            customColors = colors;
-            saveColors(customColors);
+            customColorsHSV = colors;
+            saveColorsHSV(customColorsHSV);
+        }
+        /// <summary>
+        /// Updates the internal stored values and persistent values for recoloring data.  Does NOT apply the new colors.
+        /// </summary>
+        /// <param name="colors">RGBA</param>
+        public void setCustomColorsRGB(RecoloringData[] colors)
+        {
+            customColorsRGB = colors;
+            saveColorsRGB(customColorsRGB);
         }
 
         /// <summary>
         /// Apply the current texture to the input transforms.  The texture sets include/exclude settings will be used to determine what children of the input transforms should be adjusted.
         /// </summary>
-        /// <param name="roots"></param>
-        public void enableCurrentSet(Transform[] roots, bool userInput)
+        /// <param name="roots">HSV</param>
+        public void enableCurrentSetHSV(Transform[] roots, bool userInput)
         {
             TextureSet set = currentTextureSet;
             if (set == null)
             {
                 return;
             }
-            if (userInput || customColors == null || customColors.Length == 0)
+            if (userInput || customColorsHSV == null || customColorsHSV.Length == 0)
             {
-                customColors = new RecoloringData[3];
-                customColors[0] = set.maskColors[0];
-                customColors[1] = set.maskColors[1];
-                customColors[2] = set.maskColors[2];
+                customColorsHSV = new HSVRecoloringData[3];
+                customColorsHSV[0] = set.maskColorsHSV[0];
+                customColorsHSV[1] = set.maskColorsHSV[1];
+                customColorsHSV[2] = set.maskColorsHSV[2];
             }
             int len = roots.Length;
             for (int i = 0; i < len; i++)
             {
-                set.enable(roots[i], customColors);
+                set.enableHSV(roots[i], customColorsHSV);
             }
-            saveColors(customColors);
+            saveColorsHSV(customColorsHSV);
+        }
+        /// <summary>
+        /// Apply the current texture to the input transforms.  The texture sets include/exclude settings will be used to determine what children of the input transforms should be adjusted.
+        /// </summary>
+        /// <param name="roots">RGBA</param>
+        public void enableCurrentSetRGB(Transform[] roots, bool userInput)
+        {
+            TextureSet set = currentTextureSet;
+            if (set == null)
+            {
+                return;
+            }
+            if (userInput || customColorsRGB == null || customColorsRGB.Length == 0)
+            {
+                customColorsRGB = new RecoloringData[3];
+                customColorsRGB[0] = set.maskColorsRGB[0];
+                customColorsRGB[1] = set.maskColorsRGB[1];
+                customColorsRGB[2] = set.maskColorsRGB[2];
+            }
+            int len = roots.Length;
+            for (int i = 0; i < len; i++)
+            {
+                set.enableRGB(roots[i], customColorsRGB);
+            }
+            saveColorsRGB(customColorsRGB);
         }
 
         /// <summary>
         /// Apply the current recoloring selections to the input transform.  Does not recreate material, but simply applies the properties to the current material.
         /// </summary>
         /// <param name="root"></param>
-        /// <param name="userColors"></param>
-        public void applyRecoloring(Transform root, RecoloringData[] userColors)
+        /// <param name="userColors">HSV</param>
+        public void applyRecoloringHSV(Transform root, HSVRecoloringData[] userColors)
         {
             TextureSet set = currentTextureSet;
             if (set == null)
             {
                 return;
             }
-            set.applyRecoloring(root, userColors);
+            set.applyRecoloringHSV(root, userColors);
+        }
+        /// <summary>
+        /// Apply the current recoloring selections to the input transform.  Does not recreate material, but simply applies the properties to the current material.
+        /// </summary>
+        /// <param name="root"></param>
+        /// <param name="userColors">RGBA</param>
+        public void applyRecoloringRGB(Transform root, RecoloringData[] userColors)
+        {
+            TextureSet set = currentTextureSet;
+            if (set == null)
+            {
+                return;
+            }
+            set.applyRecoloringRGB(root, userColors);
         }
 
         /// <summary>
         /// Apply the current recoloring selections to the input transforms.  Does not recreate material, but simply applies the properties to the current material.
         /// </summary>
         /// <param name="roots"></param>
-        /// <param name="userColors"></param>
-        public void applyRecoloring(Transform[] roots, RecoloringData[] userColors)
+        /// <param name="userColors">HSV</param>
+        public void applyRecoloringHSV(Transform[] roots, HSVRecoloringData[] userColors)
         {
             int len = roots.Length;
             for (int i = 0; i < len; i++)
             {
-                applyRecoloring(roots[i], userColors);
+                applyRecoloringHSV(roots[i], userColors);
+            }
+        }
+        /// <summary>
+        /// Apply the current recoloring selections to the input transforms.  Does not recreate material, but simply applies the properties to the current material.
+        /// </summary>
+        /// <param name="roots"></param>
+        /// <param name="userColors">RGBA</param>
+        public void applyRecoloringRGB(Transform[] roots, RecoloringData[] userColors)
+        {
+            int len = roots.Length;
+            for (int i = 0; i < len; i++)
+            {
+                applyRecoloringRGB(roots[i], userColors);
             }
         }
 
@@ -433,19 +522,35 @@ namespace KSPShaderTools
             {
                 string[] colorSplits = data.Split(';');
                 int len = colorSplits.Length;
-                customColors = new RecoloringData[len];
+                customColorsHSV = new HSVRecoloringData[len];
+                customColorsRGB = new RecoloringData[len];
                 for (int i = 0; i < len; i++)
                 {
-                    customColors[i] = RecoloringData.ParsePersistence(colorSplits[i]);
+                    customColorsHSV[i] = HSVRecoloringData.ParsePersistence(colorSplits[i]);
+                    customColorsRGB[i] = RecoloringData.ParsePersistence(colorSplits[i]);
                 }
             }
             else
             {
-                customColors = new RecoloringData[0];
+                customColorsHSV = new HSVRecoloringData[0];
+                customColorsRGB = new RecoloringData[0];
             }
         }
 
-        private void saveColors(RecoloringData[] colors)
+        private void saveColorsHSV(HSVRecoloringData[] colors)
+        {
+            if (colors == null || colors.Length == 0) { return; }
+            int len = colors.Length;
+            string data = string.Empty;
+            for (int i = 0; i < len; i++)
+            {
+                if (i > 0) { data = data + ";"; }
+                data = data + colors[i].getPersistentData();
+            }
+            persistentData = data;
+        }
+        
+        private void saveColorsRGB(RecoloringData[] colors)
         {
             if (colors == null || colors.Length == 0) { return; }
             int len = colors.Length;

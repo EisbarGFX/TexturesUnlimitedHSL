@@ -33,7 +33,8 @@ namespace KSPShaderTools
         /// <summary>
         /// default mask colors for this texture set
         /// </summary>
-        public readonly RecoloringData[] maskColors;
+        public readonly HSVRecoloringData[] maskColorsHSV;
+        public readonly RecoloringData[] maskColorsRGB;
 
         /// <summary>
         /// Does this texture set support recoloring?
@@ -94,18 +95,30 @@ namespace KSPShaderTools
             if (node.HasNode("COLORS"))
             {
                 ConfigNode colorsNode = node.GetNode("COLORS");
-                RecoloringData c1 = RecoloringData.ParseColorsBlockEntry(colorsNode.GetStringValue("mainColor"));
-                RecoloringData c2 = RecoloringData.ParseColorsBlockEntry(colorsNode.GetStringValue("secondColor"));
-                RecoloringData c3 = RecoloringData.ParseColorsBlockEntry(colorsNode.GetStringValue("detailColor"));
-                maskColors = new RecoloringData[] { c1, c2, c3 };
+                HSVRecoloringData h1 = HSVRecoloringData.ParseColorsBlockEntry(colorsNode.GetStringValue("mainColor"));
+                HSVRecoloringData h2 = HSVRecoloringData.ParseColorsBlockEntry(colorsNode.GetStringValue("secondColor"));
+                HSVRecoloringData h3 = HSVRecoloringData.ParseColorsBlockEntry(colorsNode.GetStringValue("detailColor"));
+                maskColorsHSV = new HSVRecoloringData[] { h1, h2, h3 };
+                
+                
+                RecoloringData r1 = RecoloringData.ParseColorsBlockEntry(colorsNode.GetStringValue("mainColor"));
+                RecoloringData r2 = RecoloringData.ParseColorsBlockEntry(colorsNode.GetStringValue("secondColor"));
+                RecoloringData r3 = RecoloringData.ParseColorsBlockEntry(colorsNode.GetStringValue("detailColor"));
+                maskColorsRGB = new RecoloringData[] { r1, r2, r3 };
             }
             else
             {
-                maskColors = new RecoloringData[3];
-                Color white = PresetColor.getColor("white").color;//will always return -something-, even if 'white' is undefined
-                maskColors[0] = new RecoloringData(white, 0, 0, 1);
-                maskColors[1] = new RecoloringData(white, 0, 0, 1);
-                maskColors[2] = new RecoloringData(white, 0, 0, 1);
+                maskColorsHSV = new HSVRecoloringData[3];
+                uColor hWhite = PresetColor.getColor("white").colorHSV;//will always return -something-, even if 'white' is undefined
+                maskColorsHSV[0] = new HSVRecoloringData(hWhite, 0, 0, 1);
+                maskColorsHSV[1] = new HSVRecoloringData(hWhite, 0, 0, 1);
+                maskColorsHSV[2] = new HSVRecoloringData(hWhite, 0, 0, 1);
+                
+                maskColorsHSV = new HSVRecoloringData[3];
+                Color rWhite = PresetColor.getColor("white").colorRGB;//will always return -something-, even if 'white' is undefined
+                maskColorsRGB[0] = new RecoloringData(rWhite, 0, 0, 1);
+                maskColorsRGB[1] = new RecoloringData(rWhite, 0, 0, 1);
+                maskColorsRGB[2] = new RecoloringData(rWhite, 0, 0, 1);
             }
             //loop through materials, and auto-enable 'recoloring' flag if recoloring keyword is set
             len = textureData.Length;
@@ -127,7 +140,7 @@ namespace KSPShaderTools
         /// </summary>
         /// <param name="root"></param>
         /// <param name="userColors"></param>
-        public void enable(Transform root, RecoloringData[] userColors, bool isIcon = false)
+        public void enableHSV(Transform root, HSVRecoloringData[] userColors, bool isIcon = false)
         {
             TextureSetMaterialData mtd;
             int len = textureData.Length;
@@ -135,7 +148,19 @@ namespace KSPShaderTools
             {
                 mtd = textureData[i];
                 mtd.enable(root, isIcon);
-                mtd.applyRecoloring(root, userColors);
+                mtd.applyRecoloringHSV(root, userColors);
+            }
+        }
+        
+        public void enableRGB(Transform root, RecoloringData[] userColors, bool isIcon = false)
+        {
+            TextureSetMaterialData mtd;
+            int len = textureData.Length;
+            for (int i = 0; i < len; i++)
+            {
+                mtd = textureData[i];
+                mtd.enable(root, isIcon);
+                mtd.applyRecoloringRGB(root, userColors);
             }
         }
 
@@ -144,14 +169,25 @@ namespace KSPShaderTools
         /// </summary>
         /// <param name="root"></param>
         /// <param name="userColors"></param>
-        public void applyRecoloring(Transform root, RecoloringData[] userColors)
+        public void applyRecoloringHSV(Transform root, HSVRecoloringData[] userColors)
         {
             TextureSetMaterialData mtd;
             int len = textureData.Length;
             for (int i = 0; i < len; i++)
             {
                 mtd = textureData[i];
-                mtd.applyRecoloring(root, userColors);
+                mtd.applyRecoloringHSV(root, userColors);
+            }
+        }
+        
+        public void applyRecoloringRGB(Transform root, RecoloringData[] userColors)
+        {
+            TextureSetMaterialData mtd;
+            int len = textureData.Length;
+            for (int i = 0; i < len; i++)
+            {
+                mtd = textureData[i];
+                mtd.applyRecoloringRGB(root, userColors);
             }
         }
         
@@ -324,9 +360,55 @@ namespace KSPShaderTools
         /// <summary>
         /// Return an array containing the properties for only the recoloring data for this texture set.
         /// </summary>
-        /// <param name="userColors"></param>
+        /// <param name="userColors">HSV</param>
         /// <returns></returns>
-        internal static ShaderProperty[] getRecolorProperties(RecoloringData[] userColors, ShaderProperty[] matProps)
+        internal static ShaderProperty[] getRecolorPropertiesHSV(HSVRecoloringData[] userColors, ShaderProperty[] matProps)
+        {
+            List<ShaderProperty> ps = new List<ShaderProperty>();
+            string name;
+            if (userColors != null)
+            {
+                int len = userColors.Length;
+                for (int i = 0; i < len; i++)
+                {
+                    name = "_MaskColor" + (i + 1);
+                    if (!Array.Exists(matProps, m => m.name == name))//only add custom coloring if it was not overriden in the MATERIAL block (else keep material block props)
+                    {
+                        ps.Add(new ShaderPropertyColor(name, userColors[i].getShaderColor()));
+                    }
+                    else
+                    {
+                        Log.extra("Skipping updating of custom color: " + name + " due to matching existing texture prop");
+                    }
+                }
+                if (!Array.Exists(matProps, m => m.name == "_MaskMetallic"))//only add custom metallic value if it was not overriden in the MATERIAL block (else keep material block props)
+                {
+                    Color metallicInput = new Color();
+                    if (len > 0) { metallicInput.r = userColors[0].metallic; }
+                    if (len > 1) { metallicInput.g = userColors[1].metallic; }
+                    if (len > 2) { metallicInput.b = userColors[2].metallic; }
+                    ps.Add(new ShaderPropertyColor("_MaskMetallic", metallicInput));
+                }
+                else
+                {
+                    Log.extra("Skipping updating of custom metallic due to matching existing texture prop");
+                }
+                //if detail mult was not specified in the text config, add it to the recoloring block based on user selection values.
+                if (!Array.Exists(matProps, m => m.name == "_DetailMult"))
+                {
+                    Vector4 dv = new Vector4(userColors[0].detail, userColors[1].detail, userColors[2].detail, 0);
+                    ps.Add(new ShaderPropertyVector("_DetailMult", dv));
+                }
+            }
+            return ps.ToArray();
+        }
+        
+        /// <summary>
+        /// Return an array containing the properties for only the recoloring data for this texture set.
+        /// </summary>
+        /// <param name="userColors">RGBA</param>
+        /// <returns></returns>
+        internal static ShaderProperty[] getRecolorPropertiesRGB(RecoloringData[] userColors, ShaderProperty[] matProps)
         {
             List<ShaderProperty> ps = new List<ShaderProperty>();
             string name;
@@ -511,14 +593,23 @@ namespace KSPShaderTools
         /// </summary>
         /// <param name="mat"></param>
         /// <param name="userColors"></param>
-        public void applyRecoloring(Transform root, RecoloringData[] userColors)
+        public void applyRecoloringHSV(Transform root, HSVRecoloringData[] userColors)
         {
-            TextureSet.updateMaterialProperties(root, meshNames, excludedMeshes, TextureSet.getRecolorProperties(userColors, shaderProperties));
+            TextureSet.updateMaterialProperties(root, meshNames, excludedMeshes, TextureSet.getRecolorPropertiesHSV(userColors, shaderProperties));
         }
 
-        public void applyRecoloring(Material mat, RecoloringData[] userColors)
+        public void applyRecoloringRGB(Transform root, RecoloringData[] userColors)
         {
-            TextureSet.updateMaterialProperties(mat, TextureSet.getRecolorProperties(userColors, shaderProperties));
+            TextureSet.updateMaterialProperties(root, meshNames, excludedMeshes, TextureSet.getRecolorPropertiesRGB(userColors, shaderProperties));
+        }
+
+        public void applyRecoloringHSV(Material mat, HSVRecoloringData[] userColors)
+        {
+            TextureSet.updateMaterialProperties(mat, TextureSet.getRecolorPropertiesHSV(userColors, shaderProperties));
+        }
+        public void applyRecoloringRGB(Material mat, RecoloringData[] userColors)
+        {
+            TextureSet.updateMaterialProperties(mat, TextureSet.getRecolorPropertiesRGB(userColors, shaderProperties));
         }
 
         /// <summary>

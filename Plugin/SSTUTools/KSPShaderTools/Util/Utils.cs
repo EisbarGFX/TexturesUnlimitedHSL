@@ -115,6 +115,57 @@ namespace KSPShaderTools
             return color;
         }
 
+        public static uColor HSVParseColorFromBytes(string input)
+        {
+            uColor color = new uColor();
+            float[] vals = parseFloatArray(input);
+            color.h = vals[0] / 255f;
+            color.s = vals[1] / 255f;
+            color.v = vals[2] / 255f;
+            return color;
+        }
+
+        public static uColor HSVParseColorFromFloats(string input)
+        {
+            uColor color = new uColor();
+            float[] vals = parseFloatArray(input);
+            color.h = vals[0];
+            color.s = vals[1];
+            color.v = vals[2];
+            return color;
+        }
+
+        /// <summary>
+        /// Will parse a value from the input into an HSV intercept in the forms of:<para/>
+        /// 255,255,255 (byte notation)<para/>
+        /// 1.0,1.0,1.0 (float notation)<para/>
+        /// <para/>
+        /// Currently missing #FFFFFF (hex notation)<para/>
+        /// </summary>
+        /// <returns>uColor (HSV)</returns>
+        public static uColor HSVParseColor(string input)
+        {
+            uColor color = uColor.white;
+            input = input.Trim();
+            //check if in float or byte notation
+            if (input.Contains(","))
+            {
+                if (input.Contains("."))
+                {
+                    return HSVParseColorFromFloats(input);
+                }
+                else
+                {
+                    return HSVParseColorFromBytes(input);
+                }
+            }
+            // else if (input.Contains("#"))
+            // {
+            //     if 
+            // }
+            return color;
+        }
+        
         /// <summary>
         /// Will parse a value from the input formats of:<para/>
         /// 255,255,255,255 (byte notation)<para/>

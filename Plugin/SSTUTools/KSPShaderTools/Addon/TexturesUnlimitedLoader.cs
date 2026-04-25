@@ -400,7 +400,8 @@ namespace KSPShaderTools
                     if (model != null)
                     {
                         Log.replacement("TexturesUnlimited -- Replacing textures on database model: " + modelNames[k]);
-                        set.enable(model.transform, set.maskColors);
+                        set.enableHSV(model.transform, set.maskColorsHSV);
+                        set.enableRGB(model.transform, set.maskColorsRGB);
                     }
                     else
                     {
@@ -780,7 +781,8 @@ namespace KSPShaderTools
     {
         public string name;
         public string title;
-        public Color color;
+        public uColor colorHSV;
+        public Color colorRGB;
         public float specular;
         public float metallic;
 
@@ -788,14 +790,20 @@ namespace KSPShaderTools
         {
             name = node.GetStringValue("name");
             title = node.GetStringValue("title");
-            color = node.GetColor("color");
+            colorRGB = node.GetColor("color");
+            colorHSV = uColor.fromShaderColor(colorRGB);
             specular = node.GetColorChannelValue("specular");
             metallic = node.GetColorChannelValue("metallic");
         }
 
+        public HSVRecoloringData getHSVRecoloringData()
+        {
+            return new HSVRecoloringData(colorHSV, specular, metallic, 1);
+        }
+
         public RecoloringData getRecoloringData()
         {
-            return new RecoloringData(color, specular, metallic, 1);
+            return new RecoloringData(colorRGB, specular, metallic, 1);
         }
     }
 
@@ -884,7 +892,7 @@ namespace KSPShaderTools
                 MonoBehaviour.print("ERROR: No preset colors defined, could not return a valid preset.");
                 return new RecoloringDataPreset()
                 {
-                    color = Color.gray,
+                    colorHSV = uColor.gray,
                     metallic = 0,
                     specular = 0,
                     name = "ERROR",
