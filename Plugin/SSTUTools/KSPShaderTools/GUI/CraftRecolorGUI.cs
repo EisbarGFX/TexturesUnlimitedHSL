@@ -26,7 +26,6 @@ namespace KSPShaderTools
         internal Action guiCloseAction;
 
         private SectionRecolorDataHSV sectionDataHSV;
-        private SectionRecolorDataRGB sectionDataRGB;
         /// <summary>
         /// Defines which ModuleRecolorData is used for UI setup and callbacks
         /// </summary>
@@ -43,9 +42,6 @@ namespace KSPShaderTools
         private static HSVRecoloringData editingColorHSV;
         private static HSVRecoloringData[] storedPatternHSV;
         private static HSVRecoloringData storedColorHSV;
-        private static RecoloringData editingColorRGB;
-        private static RecoloringData[] storedPatternRGB;
-        private static RecoloringData storedColorRGB;
         /// <summary>
         /// The name of the currently selected preset color group
         /// </summary>
@@ -100,7 +96,6 @@ namespace KSPShaderTools
                 colorIndex = 0;
             }
             setupSectionDataHSV(moduleRecolorData[moduleIndex].sectionDataHSV[sectionIndex], colorIndex);
-            setupSectionDataRGB(moduleRecolorData[moduleIndex].sectionDataRGB[sectionIndex], colorIndex);
             openPart = part;
         }
 
@@ -112,7 +107,6 @@ namespace KSPShaderTools
             closeSectionGUI();
             moduleRecolorData.Clear();
             sectionDataHSV = null;
-            sectionDataRGB = null;
             openPart = null;
             InputLockManager.RemoveControlLock("SSTURecolorGUILock");
             InputLockManager.RemoveControlLock("SSTURecolorGUILock2");
@@ -147,7 +141,6 @@ namespace KSPShaderTools
             }
 
             setupSectionDataHSV(moduleRecolorData[moduleIndex].sectionDataHSV[sectionIndex], colorIndex);
-            setupSectionDataRGB(moduleRecolorData[moduleIndex].sectionDataRGB[sectionIndex], colorIndex);
         }
 
         private void setupForPart(Part part)
@@ -254,6 +247,10 @@ namespace KSPShaderTools
             this.colorIndex = colorIndex;
             if (section.colorsHSV == null) { return; }
             editingColorHSV = sectionDataHSV.colorsHSV[colorIndex];
+            Color fromHSV = uColor.toShaderColor(editingColorHSV.color);
+            rStr = (fromHSV.r * 255f).ToString("F0");
+            gStr = (fromHSV.g * 255f).ToString("F0");
+            bStr = (fromHSV.b * 255f).ToString("F0");
             hStr = (editingColorHSV.color.h * 360f).ToString("F0");
             sStr = (editingColorHSV.color.s * 100f).ToString("F0");
             vStr = (editingColorHSV.color.v * 100f).ToString("F0");
@@ -262,31 +259,16 @@ namespace KSPShaderTools
             dStr = (editingColorHSV.detail * 100).ToString("F0");
         }
 
-        private void setupSectionDataRGB(SectionRecolorDataRGB section, int colorIndex)
-        {
-            this.sectionDataRGB = section;
-            this.colorIndex = colorIndex;
-            if (section.colorsRGB == null) {return;}
-            editingColorRGB = sectionDataRGB.colorsRGB[colorIndex];
-            rStr = (editingColorRGB.color.r * 255f).ToString("F0");
-            gStr = (editingColorRGB.color.g * 255f).ToString("F0");
-            bStr = (editingColorRGB.color.b * 255f).ToString("F0");
-            aStr = (editingColorRGB.specular * 255f).ToString("F0");
-            mStr = (editingColorRGB.metallic * 255f).ToString("F0");
-            dStr = (editingColorRGB.detail * 100).ToString("F0");
-        }
-
         private void closeSectionGUI()
         {
             sectionDataHSV = null;
-            sectionDataRGB = null;
             editingColorHSV = new HSVRecoloringData(uColor.white, 0, 0, 1);
-            editingColorRGB = new RecoloringData(Color.white, 0, 0, 1);
-            rStr = gStr = bStr = aStr = mStr = dStr = "255";
+            hStr = "360";
+            sStr = vStr = "100";
+            rStr = bStr = gStr = aStr = mStr = dStr = "255";
             colorIndex = 0;
         }
 
-        // Consider RGB as default here against standard due to GUI colors
         private void drawSectionSelectionArea()
         {
             GUILayout.BeginHorizontal();
@@ -308,10 +290,10 @@ namespace KSPShaderTools
             int len = moduleRecolorData.Count;
             for (int i = 0; i < len; i++)
             {
-                int len2 = moduleRecolorData[i].sectionDataRGB.Length;
+                int len2 = moduleRecolorData[i].sectionDataHSV.Length;
                 for (int k = 0; k < len2; k++)
                 {
-                    if (!moduleRecolorData[i].sectionDataRGB[k].recoloringSupported())
+                    if (!moduleRecolorData[i].sectionDataHSV[k].recoloringSupported())
                     {
                         continue;
                     }
@@ -320,13 +302,13 @@ namespace KSPShaderTools
                     {
                         GUI.color = Color.red;
                     }
-                    GUILayout.Label(moduleRecolorData[i].sectionDataRGB[k].sectionName, GUILayout.Width(sectionTitleWidth));
+                    GUILayout.Label(moduleRecolorData[i].sectionDataHSV[k].sectionName, GUILayout.Width(sectionTitleWidth));
                     for (int m = 0; m < 3; m++)
                     {
                         int mask = 1 << m;
-                        if (moduleRecolorData[i].sectionDataRGB[k].channelSupported(mask))
+                        if (moduleRecolorData[i].sectionDataHSV[k].channelSupported(mask))
                         {
-                            guiColor = (moduleRecolorData[i].sectionDataRGB[k].colorsRGB[m].color);
+                            guiColor = uColor.toShaderColor(moduleRecolorData[i].sectionDataHSV[k].colorsHSV[m].color);
                             guiColor.a = 1;
                             GUI.color = guiColor;
                             if (GUILayout.Button("Recolor", GUILayout.Width(70)))
@@ -335,7 +317,6 @@ namespace KSPShaderTools
                                 sectionIndex = k;
                                 colorIndex = m;
                                 setupSectionDataHSV(moduleRecolorData[i].sectionDataHSV[k], m);
-                                setupSectionDataRGB(moduleRecolorData[i].sectionDataRGB[k], m);
                             }
                         }
                         else
@@ -353,12 +334,7 @@ namespace KSPShaderTools
 
         private void drawSectionRecoloringArea()
         {
-            if (HSVRecoloringData.isHSV && sectionDataHSV == null)
-            {
-                return;
-            }
-
-            if (!HSVRecoloringData.isHSV && sectionDataRGB == null)
+            if (sectionDataHSV == null)
             {
                 return;
             }
@@ -368,18 +344,27 @@ namespace KSPShaderTools
             GUILayout.Label("Editing: ", GUILayout.Width(60));
             GUILayout.Label(sectionDataHSV.sectionName);
             GUILayout.Label(getSectionLabel(colorIndex) + " Color");
-            
+            GUILayout.FlexibleSpace();
             // Default state to isHSV==0, hrBT==RGB
             if (GUILayout.Button(HSVRecoloringData.isHSV ? "HSV" : "RGB", GUILayout.Width(60)))
             {
                 HSVRecoloringData.isHSV ^= true;
+
+                if (!HSVRecoloringData.isHSV)
+                {
+                    Color fromHSV = uColor.toShaderColor(editingColorHSV.color);
+                    rStr = (fromHSV.r * 255f).ToString("F0");
+                    bStr = (fromHSV.b * 255f).ToString("F0");
+                    gStr = (fromHSV.g * 255f).ToString("F0");
+                }
+
             }
 
-            GUILayout.FlexibleSpace(); //to force everything to the left instead of randomly spaced out, while still allowing dynamic length adjustments
+            // GUILayout.FlexibleSpace(); //moved to left of RGB/HSV buttong. OLD: to force everything to the left instead of randomly spaced out, while still allowing dynamic length adjustments
             GUILayout.EndHorizontal();
 
             // Could be done better, but this avoids dozens of isHSV checks within the gui block.
-            // TODO: this also makes it so that RGB and HSV store separate colors and palettes. Whether that's desirable is a decision I'll leave others to. If not, simply merge xxxHSV and xxxRGB fields and standardize the back-end to one.
+            // TODO: this also makes it so that RGB and HSV store separate colors and palettes. Whether that's desirable is a decision I'll leave others to. If not, simply merge xxxHSV and xxxRGB fields and standardize the back-end to one. Should be changed?
             if (HSVRecoloringData.isHSV)
             {
                 GUILayout.BeginHorizontal();
@@ -394,6 +379,9 @@ namespace KSPShaderTools
                     sectionDataHSV.colorsHSV[1] = storedPatternHSV[1];
                     sectionDataHSV.colorsHSV[2] = storedPatternHSV[2];
                     editingColorHSV = sectionDataHSV.colorsHSV[colorIndex];
+                    hStr = (editingColorHSV.color.h * 360f).ToString("F0");
+                    sStr = (editingColorHSV.color.s * 100f).ToString("F0");
+                    vStr = (editingColorHSV.color.v * 100f).ToString("F0");
                     updated = true;
                 }
 
@@ -426,6 +414,9 @@ namespace KSPShaderTools
                 if (GUILayout.Button("Load Color", GUILayout.Width(120)))
                 {
                     editingColorHSV = storedColorHSV;
+                    hStr = (editingColorHSV.color.h * 360f).ToString("F0");
+                    sStr = (editingColorHSV.color.s * 100f).ToString("F0");
+                    vStr = (editingColorHSV.color.v * 100f).ToString("F0");
                     updated = true;
                 }
 
@@ -513,25 +504,30 @@ namespace KSPShaderTools
             
             else
             {
+                RecoloringData editingFromHSV = new RecoloringData(uColor.toShaderColor(editingColorHSV.color), editingColorHSV.specular, editingColorHSV.metallic, editingColorHSV.detail);
                 GUILayout.BeginHorizontal();
-                if (drawColorInputLine("Red", ref editingColorRGB.color.r, ref rStr, sectionDataHSV.colorSupported(), 255, 1))
+                if (drawColorInputLine("Red", ref editingFromHSV.color.r, ref rStr, sectionDataHSV.colorSupported(), 255, 1))
                 {
                     updated = true;
                 }
             
                 if (GUILayout.Button("Load Pattern", GUILayout.Width(120)))
                 {
-                    sectionDataHSV.colorsRGB[0] = storedPatternRGB[0];
-                    sectionDataHSV.colorsRGB[1] = storedPatternRGB[1];
-                    sectionDataHSV.colorsRGB[2] = storedPatternRGB[2];
-                    editingColorRGB = sectionDataHSV.colorsRGB[colorIndex];
+                    sectionDataHSV.colorsHSV[0] = storedPatternHSV[0];
+                    sectionDataHSV.colorsHSV[1] = storedPatternHSV[1];
+                    sectionDataHSV.colorsHSV[2] = storedPatternHSV[2];
+                    editingColorHSV = sectionDataHSV.colorsHSV[colorIndex];
+                    editingFromHSV = new RecoloringData(uColor.toShaderColor(editingColorHSV.color));
+                    rStr = (editingFromHSV.color.r * 255).ToString("F0");
+                    bStr = (editingFromHSV.color.b * 255).ToString("F0");
+                    gStr = (editingFromHSV.color.g * 255).ToString("F0");
                     updated = true;
                 }
             
                 GUILayout.EndHorizontal();
             
                 GUILayout.BeginHorizontal();
-                if (drawColorInputLine("Green", ref editingColorRGB.color.g, ref gStr, sectionDataHSV.colorSupported(),
+                if (drawColorInputLine("Green", ref editingFromHSV.color.g, ref gStr, sectionDataHSV.colorSupported(),
                         255, 1))
                 {
                     updated = true;
@@ -539,16 +535,16 @@ namespace KSPShaderTools
             
                 if (GUILayout.Button("Store Pattern", GUILayout.Width(120)))
                 {
-                    storedPatternRGB = new RecoloringData[3];
-                    storedPatternRGB[0] = sectionDataRGB.colorsRGB[0];
-                    storedPatternRGB[1] = sectionDataRGB.colorsRGB[1];
-                    storedPatternRGB[2] = sectionDataRGB.colorsRGB[2];
+                    storedPatternHSV = new HSVRecoloringData[3];
+                    storedPatternHSV[0] = sectionDataHSV.colorsHSV[0];
+                    storedPatternHSV[1] = sectionDataHSV.colorsHSV[1];
+                    storedPatternHSV[2] = sectionDataHSV.colorsHSV[2];
                 }
             
                 GUILayout.EndHorizontal();
             
                 GUILayout.BeginHorizontal();
-                if (drawColorInputLine("Blue", ref editingColorRGB.color.b, ref bStr, sectionDataRGB.colorSupported(), 255,
+                if (drawColorInputLine("Blue", ref editingFromHSV.color.b, ref bStr, sectionDataHSV.colorSupported(), 255,
                         1))
                 {
                     updated = true;
@@ -556,14 +552,18 @@ namespace KSPShaderTools
             
                 if (GUILayout.Button("Load Color", GUILayout.Width(120)))
                 {
-                    editingColorRGB = storedColorRGB;
+                    editingColorHSV = storedColorHSV;
+                    editingFromHSV = new RecoloringData(uColor.toShaderColor(editingColorHSV.color),  editingColorHSV.specular,  editingColorHSV.metallic, editingColorHSV.detail);
+                    rStr = (editingFromHSV.color.r * 255).ToString("F0");
+                    bStr = (editingFromHSV.color.b * 255).ToString("F0");
+                    gStr = (editingFromHSV.color.g * 255).ToString("F0");
                     updated = true;
                 }
             
                 GUILayout.EndHorizontal();
             
                 GUILayout.BeginHorizontal();
-                if (drawColorInputLine("Specular", ref editingColorRGB.specular, ref aStr, sectionDataRGB.specularSupported(),
+                if (drawColorInputLine("Specular", ref editingFromHSV.specular, ref aStr, sectionDataHSV.specularSupported(),
                         255, 1))
                 {
                     updated = true;
@@ -571,29 +571,30 @@ namespace KSPShaderTools
             
                 if (GUILayout.Button("Store Color", GUILayout.Width(120)))
                 {
-                    storedColorRGB = editingColorRGB;
+                    editingColorHSV = new HSVRecoloringData(uColor.fromShaderColor(editingFromHSV.color), editingFromHSV.specular, editingFromHSV.metallic, editingFromHSV.detail);
+                    storedColorHSV = editingColorHSV;
                 }
             
                 GUILayout.EndHorizontal();
             
                 GUILayout.BeginHorizontal();
-                if (sectionDataRGB.metallicSupported())
+                if (sectionDataHSV.metallicSupported())
                 {
-                    if (drawColorInputLine("Metallic", ref editingColorRGB.metallic, ref mStr, true, 255, 1))
+                    if (drawColorInputLine("Metallic", ref editingFromHSV.metallic, ref mStr, true, 255, 1))
                     {
                         updated = true;
                     }
                 }
-                else if (sectionDataRGB.hardnessSupported())
+                else if (sectionDataHSV.hardnessSupported())
                 {
-                    if (drawColorInputLine("Hardness", ref editingColorRGB.metallic, ref mStr, true, 255, 1))
+                    if (drawColorInputLine("Hardness", ref editingFromHSV.metallic, ref mStr, true, 255, 1))
                     {
                         updated = true;
                     }
                 }
                 else
                 {
-                    if (drawColorInputLine("Metallic", ref editingColorRGB.metallic, ref mStr, false, 255, 1))
+                    if (drawColorInputLine("Metallic", ref editingFromHSV.metallic, ref mStr, false, 255, 1))
                     {
                         updated = true;
                     }
@@ -627,7 +628,7 @@ namespace KSPShaderTools
                 GUILayout.EndHorizontal();
             
                 GUILayout.BeginHorizontal();
-                if (drawColorInputLine("Detail %", ref editingColorRGB.detail, ref dStr, true, 100, 5))
+                if (drawColorInputLine("Detail %", ref editingFromHSV.detail, ref dStr, true, 100, 5))
                 {
                     updated = true;
                 }
@@ -637,8 +638,12 @@ namespace KSPShaderTools
             
                 if (updated)
                 {
-                    sectionDataRGB.colorsRGB[colorIndex] = editingColorRGB;
-                    sectionDataRGB.updateColors();
+                    HSVRecoloringData editingFromRGB = new HSVRecoloringData(
+                        uColor.fromShaderColor(editingFromHSV.color), editingFromHSV.specular, editingFromHSV.metallic,
+                        editingFromHSV.detail);
+                    editingColorHSV = editingFromRGB;
+                    sectionDataHSV.colorsHSV[colorIndex] = editingFromRGB;
+                    sectionDataHSV.updateColors();
                 }
             }
         }
@@ -671,12 +676,16 @@ namespace KSPShaderTools
                 if (GUILayout.Button("Select", GUILayout.Width(55)))
                 {
                     editingColorHSV = presetColors[i].getHSVRecoloringData();
-                    hStr = (editingColorHSV.color.h * 255f).ToString("F0");
-                    sStr = (editingColorHSV.color.s * 255f).ToString("F0");
-                    vStr = (editingColorHSV.color.v * 255f).ToString("F0");
+                    hStr = (editingColorHSV.color.h * 360f).ToString("F0");
+                    sStr = (editingColorHSV.color.s * 100f).ToString("F0");
+                    vStr = (editingColorHSV.color.v * 100f).ToString("F0");
                     aStr = (editingColorHSV.specular * 255f).ToString("F0");
                     mStr = (editingColorHSV.metallic * 255f).ToString("F0");
                     //dStr = (editingColor.detail * 100f).ToString("F0");//leave detail mult as pre-specified value (user/config); it does not pull from preset colors at all
+                    RecoloringData editingFromHSV = new RecoloringData(uColor.toShaderColor(editingColorHSV.color));
+                    rStr = (editingFromHSV.color.r * 360f).ToString("F0");
+                    gStr = (editingFromHSV.color.g * 360f).ToString("F0");
+                    bStr = (editingFromHSV.color.b * 360f).ToString("F0");
                     update = true;
                 }
                 GUI.color = old;
@@ -749,7 +758,6 @@ namespace KSPShaderTools
         public PartModule module;//must implement IRecolorable
         public IRecolorable iModule;//interface version of module
         public SectionRecolorDataHSV[] sectionDataHSV;
-        public SectionRecolorDataRGB[] sectionDataRGB;
 
         public ModuleRecolorData(PartModule module, IRecolorable iModule)
         {
@@ -758,11 +766,16 @@ namespace KSPShaderTools
             string[] names = iModule.getSectionNames();
             int len = names.Length;
             sectionDataHSV = new SectionRecolorDataHSV[len];
-            sectionDataRGB = new SectionRecolorDataRGB[len];
             for (int i = 0; i < len; i++)
             {
-                sectionDataHSV[i] = new SectionRecolorDataHSV(iModule, names[i], iModule.getSectionColorsHSV(names[i]), iModule.getSectionTexture(names[i]));
-                sectionDataRGB[i] = new SectionRecolorDataRGB(iModule, names[i], iModule.getSectionColorsRGB(names[i]), iModule.getSectionTexture(names[i]));
+                // Default section colors are handed from iModule as RGB, this section treats HSV as the default. Retrieve as RGB then convert
+                var sectionColors = iModule.getSectionColorsRGB(names[i]);
+                HSVRecoloringData[] fromDefaults = new HSVRecoloringData[sectionColors.Length];
+                for (int x = 0; x < sectionColors.Length; x++)
+                {
+                    fromDefaults[x] = new HSVRecoloringData(uColor.fromShaderColor(sectionColors[x].color), sectionColors[x].specular, sectionColors[x].metallic, sectionColors[x].detail);
+                }
+                sectionDataHSV[i] = new SectionRecolorDataHSV(iModule, names[i], fromDefaults, iModule.getSectionTexture(names[i]));
             }
         }
     }
@@ -807,7 +820,6 @@ namespace KSPShaderTools
         public readonly IRecolorable owner;
         public readonly string sectionName;
         public HSVRecoloringData[] colorsHSV;
-        public RecoloringData[] colorsRGB;
         private TextureSet sectionTexture;
 
         public SectionRecolorDataHSV(IRecolorable owner, string name, HSVRecoloringData[] colors, TextureSet set)
@@ -875,78 +887,7 @@ namespace KSPShaderTools
 
     }
 
-    public class SectionRecolorDataRGB
-    {
-        public readonly IRecolorable owner;
-        public readonly string sectionName;
-        public RecoloringData[] colorsRGB;
-        private TextureSet sectionTexture;
-
-        public SectionRecolorDataRGB(IRecolorable owner, string name, RecoloringData[] colors, TextureSet set)
-        {
-            this.owner = owner;
-            this.sectionName = name;
-            this.colorsRGB = colors;
-            this.sectionTexture = set;
-            if (colors == null)
-            {
-                //owners may return null for set and/or colors if recoloring is unsupported
-                set = sectionTexture = null;
-            }
-            //MonoBehaviour.print("Created section recolor data with texture set: " + set+" for section: "+name);
-            if (set != null)
-            {
-                //MonoBehaviour.print("Set name: " + set.name + " :: " + set.title + " recolorable: " + set.supportsRecoloring);
-            }
-            else
-            {
-                Log.error("Set was null while setting up recoloring section for: "+name);
-            }
-        }
-
-        // TODO: setting setSectionColors will likely cause an error.
-        public void updateColors()
-        {
-            owner.setSectionColorsRGB(sectionName, colorsRGB);
-        }
-
-        public bool recoloringSupported()
-        {
-            if (sectionTexture == null) { return false; }
-            return sectionTexture.supportsRecoloring;
-        }
-
-        public bool colorSupported()
-        {
-            if (sectionTexture == null) { return false; }
-            return (sectionTexture.featureMask & 1) != 0;
-        }
-
-        public bool channelSupported(int mask)
-        {
-            if (sectionTexture == null) { return false; }
-            return (sectionTexture.recolorableChannelMask & mask) != 0;
-        }
-
-        public bool specularSupported()
-        {
-            if (sectionTexture == null) { return false; }
-            return (sectionTexture.featureMask & 2) != 0;
-        }
-
-        public bool metallicSupported()
-        {
-            if (sectionTexture == null) { return false; }
-            return (sectionTexture.featureMask & 4) != 0;
-        }
-
-        public bool hardnessSupported()
-        {
-            if (sectionTexture == null) { return false; }
-            return (sectionTexture.featureMask & 8) != 0;
-        }
-
-    }
+    
     
 }
 
