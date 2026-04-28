@@ -781,6 +781,7 @@ namespace KSPShaderTools
         }
     }
     
+    // TODO: Detail in preset
     public struct RecoloringDataPreset
     {
         public string name;
@@ -789,6 +790,7 @@ namespace KSPShaderTools
         public Color colorRGB;
         public float specular;
         public float metallic;
+        public float detail;
         public bool isFavorite;
         public bool isTemp;
         public bool isHidden;
@@ -801,6 +803,7 @@ namespace KSPShaderTools
             colorHSV = uColor.fromShaderColor(colorRGB);
             specular = node.GetColorChannelValue("specular");
             metallic = node.GetColorChannelValue("metallic");
+            detail = node.GetColorChannelValue("detail");
             isFavorite = node.GetBoolValue("favorite");
             isTemp = node.GetBoolValue("temporary");
             isHidden = node.GetBoolValue("hidden");
@@ -808,12 +811,12 @@ namespace KSPShaderTools
 
         public HSVRecoloringData getHSVRecoloringData()
         {
-            return new HSVRecoloringData(colorHSV, specular, metallic, 1);
+            return new HSVRecoloringData(colorHSV, specular, metallic, detail);
         }
 
         public RecoloringData getRecoloringData()
         {
-            return new RecoloringData(colorRGB, specular, metallic, 1);
+            return new RecoloringData(colorRGB, specular, metallic, detail);
         }
 
         /// <summary>
@@ -825,7 +828,8 @@ namespace KSPShaderTools
                     one.title == two.title &&
                     (one.colorRGB == two.colorRGB || one.colorHSV == two.colorHSV) &&
                     Mathf.Approximately(one.specular, two.specular) &&
-                    Mathf.Approximately(one.metallic, two.metallic));
+                    Mathf.Approximately(one.metallic, two.metallic) &&
+                    Mathf.Approximately(one.detail, two.detail));
         }
         /// <summary>
         /// Checks for color property similarity but not flag similarity
@@ -891,18 +895,25 @@ namespace KSPShaderTools
                 {
                     var sanitized = sanitizeColor(configNode);
                     RecoloringDataPreset preset = new RecoloringDataPreset(sanitized.Item1);
+                    preset.isTemp = true;
                     externalColors.Add(configNode.GetValue("name"),  preset);
+                    Log.debug($"Adding new obsolete pairing {sanitized.Item2} {preset} to legacy");
                     obsoleteColorMap.TryAdd(configNode.GetValue("name"), sanitized.Item2);
-                    if (!presetColors.TryAdd(sanitized.Item2, preset)) continue;
+                    if (!presetColors.TryAdd(sanitized.Item2, preset))
+                    {
+                        presetColors.Add(sanitized.Item2, preset);
+                    };
                     colorList.Add(preset);
                     loadPresetIntoGroup(preset, "FULL");
                 }
             }
             
             
-            if (GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length != 0) {
-                Log.log($"TexturesUnlimited: External preset group sources detected of #: {GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length} with "+
-                $"{(primaryMasterGroupNode != null ? primaryMasterGroupNode.GetNodes("KSP_COLOR_PRESET").Length.ToString() : "0")} internal");
+            if (GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length != 0)
+            {
+                int count;
+                Log.log($"TexturesUnlimited: External preset group sources detected of #: {count = GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length} with "+
+                $"{(primaryMasterGroupNode != null ? (primaryMasterGroupNode.GetNodes("KSP_COLOR_PRESET").Length - count).ToString() : "0")} internal");
                 
                 ConfigNode[] nodes = GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP");
                 foreach (var configNode in nodes)
@@ -1108,11 +1119,11 @@ namespace KSPShaderTools
         /// <returns>True if edited, False if new preset created</returns>
         public static void editColorFromCache(HSVRecoloringData data, string title = "Unknown")
         {
-            if (presetColors.TryGetValue(HSVRecoloringData.ConvertToHEXTen(data), out var dataPreset))
+            if (presetColors.TryGetValue(HSVRecoloringData.ConvertToHEXTwelve(data), out var dataPreset))
             {
                 editColorFromCache(dataPreset);
             }
-            createColorToCache(data, HSVRecoloringData.ConvertToHEXTen(data), title, false, false, false);
+            createColorToCache(data, HSVRecoloringData.ConvertToHEXTwelve(data), title, false, false, false);
         }
         
         public static void editColorFromCache(RecoloringDataPreset data)
@@ -1158,8 +1169,10 @@ namespace KSPShaderTools
 
             foreach (var (name, preset) in presetColors)
             {
+                if (preset.isTemp) continue;
                 if (colorFromFile.TryGetValue(name, out ConfigNode fileNode))
                 {
+                    if (!fileNode.HasValue("detail")) fileNode.AddValue("detail", preset.detail);
                     RecoloringDataPreset filePreset = new RecoloringDataPreset(fileNode);
                     if (filePreset == preset && (filePreset.isTemp == preset.isTemp &&
                           filePreset.isHidden == preset.isHidden &&
@@ -1185,9 +1198,12 @@ namespace KSPShaderTools
                 fileNode = new ConfigNode("KSP_COLOR_PRESET");
                 fileNode.AddValue("name", preset.name);
                 fileNode.AddValue("title", preset.title);
-                fileNode.AddValue("color", preset.colorRGB);
-                fileNode.AddValue("specular", preset.specular);
-                fileNode.AddValue("metallic", preset.metallic);
+                fileNode.AddValue("color", $"{(preset.colorRGB.r * 255):F0}," +
+                                           $"{(preset.colorRGB.g * 255):F0}," + 
+                                           $"{(preset.colorRGB.b * 255):F0}");
+                fileNode.AddValue("specular", (preset.specular * 255).ToString("F0"));
+                fileNode.AddValue("metallic", (preset.metallic * 255).ToString("F0"));
+                fileNode.AddValue("detail", (preset.detail * 100).ToString("F0"));
                 fileNode.AddValue("isFavorite", preset.isFavorite);
                 fileNode.AddValue("isTemp", preset.isTemp);
                 fileNode.AddValue("isHidden", preset.isHidden);
@@ -1217,6 +1233,7 @@ namespace KSPShaderTools
                         fileNode.RemoveValue("color");
                         foreach (var preset in group.colors)
                         {
+                            if (preset.isTemp) continue;
                             fileNode.AddValue("color", preset.name);
                         }
 
@@ -1273,18 +1290,26 @@ namespace KSPShaderTools
         public static (ConfigNode, string) sanitizeColor(ConfigNode configIn)
         {
             var configOut = configIn.CreateCopy();
-            string cachedName = HSVRecoloringData.ConvertToHEXTen(new RecoloringDataPreset(configIn));
+            string cachedName = HSVRecoloringData.ConvertToHEXTwelve(new RecoloringDataPreset(configIn));
+            string color = "255, 255, 255";
+            configIn.TryGetValue("color", ref color);
+            // string strColor = $"{(color.r * 255):F0}," +
+            //     $"{(color.g * 255):F0}," + 
+            //     $"{(color.b * 255):F0}";
             string cachedTitle = configIn.GetStringValue("title", cachedName);
             int specular = configIn.GetIntValue("specular", 0);
             int metallic = configIn.GetIntValue("metallic", 0);
+            int detail = configIn.GetIntValue("detail", 0);
             bool favorite = configIn.GetBoolValue("favorite", false);
             bool temporary = configIn.GetBoolValue("temporary", false);
             bool hidden = configIn.GetBoolValue("hidden", false);
 
             configOut.SetValue("name", cachedName, true);
+            configOut.SetValue("color", color, true);
             configOut.SetValue("title", cachedTitle, true);
             configOut.SetValue("specular", specular, true);
             configOut.SetValue("metallic", metallic, true);
+            configOut.SetValue("detail", detail, true);
             configOut.SetValue("favorite", favorite, true);
             configOut.SetValue("temporary", temporary, true);
             configOut.SetValue("hidden", hidden, true);
@@ -1321,17 +1346,25 @@ namespace KSPShaderTools
                     {
                         string str = "";
                         int spec = 0;
+                        int met = 0;
                         int det = 0;
                         HSVRecoloringData data = new HSVRecoloringData()
                         {
                             color = configNode.TryGetValue("name", ref str) ? Utils.HSVParseColor(str) : uColor.white,
                             specular = configNode.TryGetValue("specular", ref spec) ? spec : 0,
+                            metallic = configNode.TryGetValue("metallic", ref met) ? met : 0,
                             detail = configNode.TryGetValue("detail", ref det) ? det : 0
                         };
-                        configNode.AddValue("name", HSVRecoloringData.ConvertToHEXTen(data));
+                        configNode.AddValue("name", HSVRecoloringData.ConvertToHEXTwelve(data));
                     }
-                    if (configNode.GetValue("name").Contains("#") && configNode.GetValue("name").Length == 11)
+                    if (configNode.GetValue("name").Contains("#") && configNode.GetValue("name").Length == 13)
                     {
+                        if (!(configNode.HasValues("specular", "metallic", "detail")))
+                        {
+                            var newConfig = sanitizeColor(configNode);
+                            colorDictCached.TryAdd(newConfig.Item2, newConfig.Item1);
+                            continue;
+                        }
                         colorDictCached.TryAdd(configNode.GetValue("name"), configNode);
                         continue;
                     }
@@ -1354,7 +1387,7 @@ namespace KSPShaderTools
                 colorMaster = new ConfigNode("COLOR_MASTER");
                 foreach (var configNode in GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET"))
                 {
-                    if (configNode.GetValue("name").Contains("#") && configNode.GetValue("name").Length == 11)
+                    if (configNode.GetValue("name").Contains("#") && configNode.GetValue("name").Length == 13)
                     {
                         colorDictCached.TryAdd(configNode.GetValue("name"), configNode);
                         continue;
@@ -1388,7 +1421,7 @@ namespace KSPShaderTools
                     List<string> cachedColors = new List<string>();
                     foreach (var colorName in colors)
                     {
-                        if (colorName.Contains("#") && colorName.Length == 11)
+                        if (colorName.Contains("#") && colorName.Length == 13)
                         {
                             ConfigNode representativeColor = colorDictCached[colorName];
                             // sanity check - should never return false here and true in foreach
@@ -1400,7 +1433,7 @@ namespace KSPShaderTools
                             {
                                 foreach (var (name, node) in colorDictCached)
                                 {
-                                    if (colorName != HSVRecoloringData.ConvertToHEXTen(new RecoloringDataPreset(node)))
+                                    if (colorName != HSVRecoloringData.ConvertToHEXTwelve(new RecoloringDataPreset(node)))
                                         continue;
                                     cachedColors.Add(name);
                                     Log.debug("TexturesUnlimited: Contradictory sanitize result: colorName " + colorName +
@@ -1410,10 +1443,10 @@ namespace KSPShaderTools
                                     Log.debug("TexturesUnlimited: Comparable HEX10s: (" +
                                               representativeColor.GetValue("name") +
                                               "): " +
-                                              HSVRecoloringData.ConvertToHEXTen(
+                                              HSVRecoloringData.ConvertToHEXTwelve(
                                                   new RecoloringDataPreset(representativeColor)) + " (" +
                                               name +
-                                              "): " + HSVRecoloringData.ConvertToHEXTen(
+                                              "): " + HSVRecoloringData.ConvertToHEXTwelve(
                                                   new RecoloringDataPreset(node)));
                                 }
                             }
@@ -1429,7 +1462,7 @@ namespace KSPShaderTools
                             }
 
                             Log.debug("TexturesUnlimited: Color preset group cannot match " + colorName +
-                                      " to any sanitized of HEX10 " + sanitized.Item2);
+                                      " to any sanitized of HEX12 " + sanitized.Item2);
                             // TODO: failed sanitized pull, silent delete?
                         }
                     }
@@ -1454,7 +1487,7 @@ namespace KSPShaderTools
                     List<string> cachedColors = new List<string>();
                     foreach (var colorName in colors)
                     {
-                        if (colorName.Contains("#") && colorName.Length == 11)
+                        if (colorName.Contains("#") && colorName.Length == 13)
                         {
                             ConfigNode representativeColor = colorDictCached[colorName];
                             // sanity check - should never return false here and true in foreach, throw exception if it does
@@ -1466,7 +1499,7 @@ namespace KSPShaderTools
                             {
                                 foreach (var (name, node) in colorDictCached)
                                 {
-                                    if (colorName != HSVRecoloringData.ConvertToHEXTen(new RecoloringDataPreset(node)))
+                                    if (colorName != HSVRecoloringData.ConvertToHEXTwelve(new RecoloringDataPreset(node)))
                                         continue;
                                     cachedColors.Add(name);
                                     Log.exception("Contradictory sanitize result: colorName " + colorName +
@@ -1476,10 +1509,10 @@ namespace KSPShaderTools
                                     Log.exception("Comparable HEX10s: (" +
                                                           representativeColor.GetValue("name") +
                                                           "): " +
-                                                          HSVRecoloringData.ConvertToHEXTen(
+                                                          HSVRecoloringData.ConvertToHEXTwelve(
                                                               new RecoloringDataPreset(representativeColor)) + " (" +
                                                           name +
-                                                          "): " + HSVRecoloringData.ConvertToHEXTen(
+                                                          "): " + HSVRecoloringData.ConvertToHEXTwelve(
                                                               new RecoloringDataPreset(node)));
                                 }
                             }

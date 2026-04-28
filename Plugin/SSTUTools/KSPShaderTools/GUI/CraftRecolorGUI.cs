@@ -501,7 +501,7 @@ namespace KSPShaderTools
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                if (drawColorInputLine("Detail %", ref editingColorHSV.detail, ref dStr, true, 100, 5))
+                if (drawColorInputLine("Detail %", ref editingColorHSV.detail, ref dStr, true, 100, 1))
                 {
                     updated = true;
                 }
@@ -642,7 +642,7 @@ namespace KSPShaderTools
                 GUILayout.EndHorizontal();
             
                 GUILayout.BeginHorizontal();
-                if (drawColorInputLine("Detail %", ref editingFromHSV.detail, ref dStr, true, 100, 5))
+                if (drawColorInputLine("Detail %", ref editingFromHSV.detail, ref dStr, true, 100, 1))
                 {
                     updated = true;
                 }
@@ -666,7 +666,7 @@ namespace KSPShaderTools
             //
 
             editingNewColor = (PresetColor.getColorList().ToDictionary(k => k.name)
-                .TryGetValue(HSVRecoloringData.ConvertToHEXTen(editingColorHSV), out RecoloringDataPreset dataPreset));
+                .TryGetValue(HSVRecoloringData.ConvertToHEXTwelve(editingColorHSV), out RecoloringDataPreset dataPreset));
         }
 
         private bool drawPresetManagementArea()
@@ -715,7 +715,7 @@ namespace KSPShaderTools
             {
                 var preset = new RecoloringDataPreset()
                 {
-                    name = HSVRecoloringData.ConvertToHEXTen(editingColorHSV),
+                    name = HSVRecoloringData.ConvertToHEXTwelve(editingColorHSV),
                     title = editingPresetTitle,
                     colorHSV = editingColorHSV.color,
                     colorRGB = uColor.toShaderColor(editingColorHSV.color),
@@ -782,7 +782,7 @@ namespace KSPShaderTools
                     vStr = (editingColorHSV.color.v * 100f).ToString("F0");
                     aStr = (editingColorHSV.specular * 255f).ToString("F0");
                     mStr = (editingColorHSV.metallic * 255f).ToString("F0");
-                    //dStr = (editingColor.detail * 100f).ToString("F0");//leave detail mult as pre-specified value (user/config); it does not pull from preset colors at all
+                    dStr = (editingColorHSV.detail * 100f).ToString("F0");
                     RecoloringData editingFromHSV = new RecoloringData(uColor.toShaderColor(editingColorHSV.color));
                     rStr = (editingFromHSV.color.r * 360f).ToString("F0");
                     gStr = (editingFromHSV.color.g * 360f).ToString("F0");

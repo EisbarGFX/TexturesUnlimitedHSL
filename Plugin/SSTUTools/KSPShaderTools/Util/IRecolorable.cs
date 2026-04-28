@@ -241,7 +241,7 @@ namespace KSPShaderTools
                     color = Utils.HSVParseColor(hsv);
                     specular = Utils.safeParseInt(specString) / 255f;
                     metallic = Utils.safeParseInt(metalString) / 255f;
-                    detail = Utils.safeParseInt(detailString) / 255f;
+                    detail = Utils.safeParseInt(detailString) / 100f;
                 }
             }
             else //preset color, load from string value
@@ -262,32 +262,32 @@ namespace KSPShaderTools
         /// </summary>
         /// <param name="data">HSVRecoloringData (HSV)</param>
         /// <returns>string (HEX10)</returns>
-        public static string ConvertToHEXTen(HSVRecoloringData data)
+        public static string ConvertToHEXTwelve(HSVRecoloringData data)
         {
             uColor color = data.color;
             string parse = ConvertToHEX(color);
-            return parse + ((int)(data.specular * 100)).ToString("X2") + ((int)(data.metallic * 100)).ToString("X2");
+            return parse + ((int)(data.specular * 255)).ToString("X2") + ((int)(data.metallic * 255)).ToString("X2") + ((int)(data.detail * 100)).ToString("X2");
         }/// <summary>
         /// Converts a RecoloringDataPreset to 10-digit HEX #FFFFFFFFFF (R,G,B,S,M)
         /// </summary>
         /// <param name="data">RecoloringDataPreset</param>
         /// <returns>string (HEX10)</returns>
-        public static string ConvertToHEXTen(RecoloringDataPreset data)
+        public static string ConvertToHEXTwelve(RecoloringDataPreset data)
         {
             uColor color = data.colorHSV;
             string parse = ConvertToHEX(color);
-            return parse + ((int)(data.specular * 100)).ToString("X2") + ((int)(data.metallic * 100)).ToString("X2");
+            return parse + ((int)(data.specular * 255)).ToString("X2") + ((int)(data.metallic * 255)).ToString("X2") + ((int)(data.detail * 100)).ToString("X2");
         }
         /// <summary>
         /// Converts HSV or RGB RecoloringData to 10-digit HEX #FFFFFFFFFF (R,G,B,S,M)
         /// </summary>
         /// <param name="data">HSVRecoloringData (RGB)</param>
         /// <returns>string (HEX10)</returns>
-        public static string ConvertToHEXTen(RecoloringData data)
+        public static string ConvertToHEXTwelve(RecoloringData data)
         {
             Color color = data.color;
             string parse = ConvertToHEX(color);
-            return parse + ((int)(data.specular * 100)).ToString("X2") + ((int)(data.metallic * 100)).ToString("X2");
+            return parse + ((int)(data.specular * 255)).ToString("X2") + ((int)(data.metallic * 255)).ToString("X2") + ((int)(data.detail * 100)).ToString("X2");
         }
         /// <summary>
         /// Converts HSV or RGB RecoloringData and HSV or RGB Color to 6-digit HEX #FFFFFF
@@ -445,7 +445,7 @@ namespace KSPShaderTools
                     string rgb = values[0] + "," + values[1] + "," + values[2] + ",255";
                     string specString = len > 3 ? values[3] : "0";
                     string metalString = len > 4 ? values[4] : "0";
-                    string detailString = len > 5 ? values[5] : "255";
+                    string detailString = len > 5 ? values[5] : "100";
                     color = Utils.parseColor(rgb);
                     specular = Utils.safeParseInt(specString) / 255f;
                     metallic = Utils.safeParseInt(metalString) / 255f;
