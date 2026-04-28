@@ -67,6 +67,7 @@ namespace KSPShaderTools
         {
             if (guiObject != null)
             {
+                PresetColor.writeColorsToFile();
                 gui.closeGui();
                 gui = null;
                 GameObject.Destroy(guiObject);

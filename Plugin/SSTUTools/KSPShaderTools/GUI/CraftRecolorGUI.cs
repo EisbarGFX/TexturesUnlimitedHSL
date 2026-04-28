@@ -1,6 +1,8 @@
 ﻿using KSPShaderTools.Settings;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Smooth.Collections;
 using UnityEngine;
 using UnityEditor;
 
@@ -42,10 +44,21 @@ namespace KSPShaderTools
         private static HSVRecoloringData editingColorHSV;
         private static HSVRecoloringData[] storedPatternHSV;
         private static HSVRecoloringData storedColorHSV;
+        private static bool editingNewColor = false;
         /// <summary>
         /// The name of the currently selected preset color group
         /// </summary>
         private static string groupName = "FULL";
+        /// <summary>
+        /// The name of the currently editing preset color group
+        /// </summary>
+        private static string editingGroupName = "FULL";
+        /// <summary>
+        /// The display name of the currently editing preset
+        /// </summary>
+        private static string editingPresetTitle = "Custom";
+        private static bool editingPresetFavorite = false;
+        private static bool editingPresetHidden = false;
         /// <summary>
         /// Index into the list of groups for the currently selected group
         /// </summary>
@@ -228,6 +241,7 @@ namespace KSPShaderTools
             UnityEngine.GUILayout.BeginVertical();
             drawSectionSelectionArea();
             drawSectionRecoloringArea();
+            drawPresetManagementArea();
             drawPresetColorArea();
             if (GUILayout.Button("Close"))
             {
@@ -286,7 +300,7 @@ namespace KSPShaderTools
             GUI.color = old;
             GUILayout.EndHorizontal();
             Color guiColor = old;
-            scrollPos = GUILayout.BeginScrollView(scrollPos, false, true, GUILayout.Height(sectionHeight));
+            scrollPos = GUILayout.BeginScrollView(scrollPos, false, true, GUILayout.Height(sectionHeight - 40));
             int len = moduleRecolorData.Count;
             for (int i = 0; i < len; i++)
             {
@@ -331,7 +345,7 @@ namespace KSPShaderTools
             GUI.color = old;
             GUILayout.EndScrollView();
         }
-
+        
         private void drawSectionRecoloringArea()
         {
             if (sectionDataHSV == null)
@@ -345,6 +359,8 @@ namespace KSPShaderTools
             GUILayout.Label(sectionDataHSV.sectionName);
             GUILayout.Label(getSectionLabel(colorIndex) + " Color");
             GUILayout.FlexibleSpace();
+            
+            GUILayout.Space(30);
             // Default state to isHSV==0, hrBT==RGB
             if (GUILayout.Button(HSVRecoloringData.isHSV ? "HSV" : "RGB", GUILayout.Width(60)))
             {
@@ -357,14 +373,12 @@ namespace KSPShaderTools
                     bStr = (fromHSV.b * 255f).ToString("F0");
                     gStr = (fromHSV.g * 255f).ToString("F0");
                 }
-
             }
 
-            // GUILayout.FlexibleSpace(); //moved to left of RGB/HSV buttong. OLD: to force everything to the left instead of randomly spaced out, while still allowing dynamic length adjustments
+            // GUILayout.FlexibleSpace(); //moved to left of RGB/HSV button. OLD: to force everything to the left instead of randomly spaced out, while still allowing dynamic length adjustments
             GUILayout.EndHorizontal();
 
             // Could be done better, but this avoids dozens of isHSV checks within the gui block.
-            // TODO: this also makes it so that RGB and HSV store separate colors and palettes. Whether that's desirable is a decision I'll leave others to. If not, simply merge xxxHSV and xxxRGB fields and standardize the back-end to one. Should be changed?
             if (HSVRecoloringData.isHSV)
             {
                 GUILayout.BeginHorizontal();
@@ -635,17 +649,102 @@ namespace KSPShaderTools
             
                 GUILayout.Label(groupName, GUILayout.Width(120));
                 GUILayout.EndHorizontal();
-            
+                HSVRecoloringData editingFromRGB = new HSVRecoloringData(
+                    uColor.fromShaderColor(editingFromHSV.color), editingFromHSV.specular, editingFromHSV.metallic,
+                    editingFromHSV.detail);
+                editingColorHSV = editingFromRGB;
                 if (updated)
                 {
-                    HSVRecoloringData editingFromRGB = new HSVRecoloringData(
-                        uColor.fromShaderColor(editingFromHSV.color), editingFromHSV.specular, editingFromHSV.metallic,
-                        editingFromHSV.detail);
-                    editingColorHSV = editingFromRGB;
                     sectionDataHSV.colorsHSV[colorIndex] = editingFromRGB;
                     sectionDataHSV.updateColors();
                 }
             }
+
+            // horrid.
+            // Enumerable ToDictionary converts Preset.getColorList to a dictionary of presetData keyed by HEXTen name
+            // Then checks if the HEX10 name for the current editing color exists and saves the result. If so, edit. If not, create
+            //
+
+            editingNewColor = (PresetColor.getColorList().ToDictionary(k => k.name)
+                .TryGetValue(HSVRecoloringData.ConvertToHEXTen(editingColorHSV), out RecoloringDataPreset dataPreset));
+        }
+
+        private bool drawPresetManagementArea()
+        {
+            if (sectionDataHSV == null)
+            {
+                return false;
+            }
+
+            GUILayout.Label("Manage preset colors: ");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Preset Group");
+            bool update = false;
+            string textOutput = GUILayout.TextField(editingGroupName, GUILayout.Width(95));
+            if (editingGroupName != textOutput)
+            {
+                editingGroupName = textOutput;
+                update = true;
+            }
+            GUILayout.FlexibleSpace();
+            GUILayout.Label("Preset Title");
+            textOutput = GUILayout.TextField(editingPresetTitle, GUILayout.Width(95));
+            if (editingPresetTitle != textOutput)
+            {
+                editingPresetTitle = textOutput;
+                update = true;
+            }
+            GUILayout.EndHorizontal();
+            
+            GUILayout.BeginHorizontal();
+            editingPresetFavorite = GUILayout.Toggle(editingPresetFavorite, "Favorite",  GUILayout.Width(75));
+            editingPresetHidden = GUILayout.Toggle(editingPresetHidden, "Hidden", GUILayout.Width(75));
+            GUILayout.FlexibleSpace();
+            // see editingNewColor declaration for explanation
+            bool exists = PresetColor.getColorList().ToDictionary(k => k.title)
+                .TryGetValue(editingPresetTitle, out RecoloringDataPreset dataPreset);
+            if (exists)
+            {
+                if (GUILayout.Button("Delete Preset", GUILayout.Width(100)))
+                {
+                    PresetColor.deleteColorFromCache(dataPreset);
+                }
+            }
+            // TODO: creating a preset with different title and same HEX10 or v/v - confirmation for overwrite
+            if (GUILayout.Button(exists ? "Edit Preset" : "Create Preset", GUILayout.Width(90)))
+            {
+                var preset = new RecoloringDataPreset()
+                {
+                    name = HSVRecoloringData.ConvertToHEXTen(editingColorHSV),
+                    title = editingPresetTitle,
+                    colorHSV = editingColorHSV.color,
+                    colorRGB = uColor.toShaderColor(editingColorHSV.color),
+                    specular = editingColorHSV.specular,
+                    metallic = editingColorHSV.metallic,
+                    isFavorite = editingPresetFavorite,
+                    isHidden = editingPresetHidden,
+                    isTemp = editingPresetHidden
+                };
+                if (exists)
+                {
+                    PresetColor.editColorFromCache(preset);
+                }
+                else
+                {
+                    PresetColor.createColorToCache(preset);
+                }
+                
+            }
+            GUILayout.EndHorizontal();
+            if (sectionDataHSV.colorsHSV != null)
+            {
+                sectionDataHSV.colorsHSV[colorIndex] = editingColorHSV;
+                if (update)
+                {
+                    sectionDataHSV.updateColors();
+                }
+            }
+            return update;
         }
 
         private void drawPresetColorArea()
@@ -676,6 +775,8 @@ namespace KSPShaderTools
                 if (GUILayout.Button("Select", GUILayout.Width(55)))
                 {
                     editingColorHSV = presetColors[i].getHSVRecoloringData();
+                    editingGroupName = groupName;
+                    editingPresetTitle = presetColors[i].title;
                     hStr = (editingColorHSV.color.h * 360f).ToString("F0");
                     sStr = (editingColorHSV.color.s * 100f).ToString("F0");
                     vStr = (editingColorHSV.color.v * 100f).ToString("F0");

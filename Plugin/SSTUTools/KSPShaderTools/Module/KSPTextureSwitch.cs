@@ -89,6 +89,7 @@ namespace KSPShaderTools
             }
         }
 
+        // TODO: master and color nodes in readFromFile functions need to work on multiple nodes, not just [0]
         /// <summary>
         /// Restores texture set data and either loads default texture set or saved texture set (if any)
         /// </summary>

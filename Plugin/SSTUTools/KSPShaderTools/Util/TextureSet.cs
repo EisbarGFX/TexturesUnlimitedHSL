@@ -109,16 +109,18 @@ namespace KSPShaderTools
             else
             {
                 maskColorsHSV = new HSVRecoloringData[3];
-                uColor hWhite = PresetColor.getColor("white").colorHSV;//will always return -something-, even if 'white' is undefined
-                maskColorsHSV[0] = new HSVRecoloringData(hWhite, 0, 0, 1);
-                maskColorsHSV[1] = new HSVRecoloringData(hWhite, 0, 0, 1);
-                maskColorsHSV[2] = new HSVRecoloringData(hWhite, 0, 0, 1);
+                    // Not entirely sure why presetColors were even gotten here - you wouldn't be able to change the definition
+                    // of white without entering configs anyway, and why would you want to edit the default color here?
+                // uColor hWhite = PresetColor.getColor("white").colorHSV;//will always return -something-, even if 'white' is undefined
+                maskColorsHSV[0] = new HSVRecoloringData(uColor.white, 0, 0, 1);
+                maskColorsHSV[1] = new HSVRecoloringData(uColor.white, 0, 0, 1);
+                maskColorsHSV[2] = new HSVRecoloringData(uColor.white, 0, 0, 1);
                 
                 maskColorsHSV = new HSVRecoloringData[3];
-                Color rWhite = PresetColor.getColor("white").colorRGB;//will always return -something-, even if 'white' is undefined
-                maskColorsRGB[0] = new RecoloringData(rWhite, 0, 0, 1);
-                maskColorsRGB[1] = new RecoloringData(rWhite, 0, 0, 1);
-                maskColorsRGB[2] = new RecoloringData(rWhite, 0, 0, 1);
+                //Color rWhite = PresetColor.getColor("white").colorRGB;//will always return -something-, even if 'white' is undefined
+                maskColorsRGB[0] = new RecoloringData(Color.white, 0, 0, 1);
+                maskColorsRGB[1] = new RecoloringData(Color.white, 0, 0, 1);
+                maskColorsRGB[2] = new RecoloringData(Color.white, 0, 0, 1);
             }
             //loop through materials, and auto-enable 'recoloring' flag if recoloring keyword is set
             len = textureData.Length;

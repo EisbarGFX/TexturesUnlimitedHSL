@@ -105,6 +105,16 @@ namespace KSPShaderTools
             c.a = 1;
             return c;
         }
+
+        public static bool operator ==(uColor one, uColor two)
+        {
+            return (Mathf.Approximately(one.h, two.h) && Mathf.Approximately(one.s, two.s) && Mathf.Approximately(one.v, two.v));
+        }
+
+        public static bool operator !=(uColor one, uColor two)
+        {
+            return !(one == two);
+        }
     }
     
     public struct HSVRecoloringData
@@ -236,7 +246,9 @@ namespace KSPShaderTools
             }
             else //preset color, load from string value
             {
-                RecoloringDataPreset preset = PresetColor.getColor(data);
+                RecoloringDataPreset preset = PresetColor.getColor(
+                    (!data.Contains("#") && PresetColor.obsoleteColorMap.TryGetValue(data, out var newColor)) 
+                        ? newColor : data);
                 color = preset.colorHSV;
                 specular = preset.specular;
                 metallic = preset.metallic;
@@ -244,6 +256,67 @@ namespace KSPShaderTools
             }
             return new HSVRecoloringData(color, specular, metallic, detail);
         }
+
+        /// <summary>
+        /// Converts HSV or RGB RecoloringData to 10-digit HEX #FFFFFFFFFF (R,G,B,S,M)
+        /// </summary>
+        /// <param name="data">HSVRecoloringData (HSV)</param>
+        /// <returns>string (HEX10)</returns>
+        public static string ConvertToHEXTen(HSVRecoloringData data)
+        {
+            uColor color = data.color;
+            string parse = ConvertToHEX(color);
+            return parse + ((int)(data.specular * 100)).ToString("X2") + ((int)(data.metallic * 100)).ToString("X2");
+        }/// <summary>
+        /// Converts a RecoloringDataPreset to 10-digit HEX #FFFFFFFFFF (R,G,B,S,M)
+        /// </summary>
+        /// <param name="data">RecoloringDataPreset</param>
+        /// <returns>string (HEX10)</returns>
+        public static string ConvertToHEXTen(RecoloringDataPreset data)
+        {
+            uColor color = data.colorHSV;
+            string parse = ConvertToHEX(color);
+            return parse + ((int)(data.specular * 100)).ToString("X2") + ((int)(data.metallic * 100)).ToString("X2");
+        }
+        /// <summary>
+        /// Converts HSV or RGB RecoloringData to 10-digit HEX #FFFFFFFFFF (R,G,B,S,M)
+        /// </summary>
+        /// <param name="data">HSVRecoloringData (RGB)</param>
+        /// <returns>string (HEX10)</returns>
+        public static string ConvertToHEXTen(RecoloringData data)
+        {
+            Color color = data.color;
+            string parse = ConvertToHEX(color);
+            return parse + ((int)(data.specular * 100)).ToString("X2") + ((int)(data.metallic * 100)).ToString("X2");
+        }
+        /// <summary>
+        /// Converts HSV or RGB RecoloringData and HSV or RGB Color to 6-digit HEX #FFFFFF
+        /// </summary>
+        /// <param name="data">HSVRecoloringData (HSV)</param>
+        /// <returns>string (HEX)</returns>
+        public static string ConvertToHEX(HSVRecoloringData data) { return ConvertToHEX(data.color); }
+        /// <summary>
+        /// Converts HSV or RGB RecoloringData and HSV or RGB Color to 6-digit HEX #FFFFFF
+        /// </summary>
+        /// <param name="data">RecoloringData (RGB)</param>
+        /// <returns>string (HEX)</returns>
+        public static string ConvertToHEX(RecoloringData data) { return ConvertToHEX(data.color); }
+        /// <summary>
+        /// Converts HSV or RGB RecoloringData and HSV or RGB Color to 6-digit HEX #FFFFFF
+        /// </summary>
+        /// <param name="color">uColor (HSV)</param>
+        /// <returns>string (HEX)</returns>
+        public static string ConvertToHEX(uColor color)
+        {
+            Color c = uColor.toShaderColor(color);
+            return ("#" +  ((int)(c.r*255)).ToString("X2") + ((int)(c.g*255)).ToString("X2") + ((int)(c.b*255)).ToString("X2"));
+        }
+        /// <summary>
+        /// Converts HSV or RGB RecoloringData and HSV or RGB Color to 6-digit HEX #FFFFFF
+        /// </summary>
+        /// <param name="color">Color (RGB)</param>
+        /// <returns>string (HEX)</returns>
+        public static string ConvertToHEX(Color color) {return "#" + color.r.ToString("X2") + color.g.ToString("X2") + color.b.ToString("X2"); }
     }
     
     
@@ -381,7 +454,9 @@ namespace KSPShaderTools
             }
             else //preset color, load from string value
             {
-                RecoloringDataPreset preset = PresetColor.getColor(data);
+                RecoloringDataPreset preset = PresetColor.getColor(
+                    (!data.Contains("#") && PresetColor.obsoleteColorMap.TryGetValue(data, out var newColor)) 
+                        ? newColor : data);
                 color = preset.colorRGB;
                 specular = preset.specular;
                 metallic = preset.metallic;

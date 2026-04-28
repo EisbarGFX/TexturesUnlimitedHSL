@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using Smooth.Slinq.Test;
+using UniLinq;
 using UnityEngine;
 
 namespace KSPShaderTools
@@ -145,7 +147,9 @@ namespace KSPShaderTools
             loadBundles();
             buildShaderSets();
             PresetColor.loadColors();
+            Log.log("TexturesUnlimited: Loaded Colors Completed");
             loadTextureSets();
+            Log.log("TexturesUnlimited: Loaded TextureSets Completed");
             applyToModelDatabase();
             Log.log("TexturesUnlimited - Calling PostLoad handlers");
             foreach (Action act in postLoadCallbacks) { act.Invoke(); }
@@ -785,6 +789,9 @@ namespace KSPShaderTools
         public Color colorRGB;
         public float specular;
         public float metallic;
+        public bool isFavorite;
+        public bool isTemp;
+        public bool isHidden;
 
         public RecoloringDataPreset(ConfigNode node)
         {
@@ -794,6 +801,9 @@ namespace KSPShaderTools
             colorHSV = uColor.fromShaderColor(colorRGB);
             specular = node.GetColorChannelValue("specular");
             metallic = node.GetColorChannelValue("metallic");
+            isFavorite = node.GetBoolValue("favorite");
+            isTemp = node.GetBoolValue("temporary");
+            isHidden = node.GetBoolValue("hidden");
         }
 
         public HSVRecoloringData getHSVRecoloringData()
@@ -804,6 +814,25 @@ namespace KSPShaderTools
         public RecoloringData getRecoloringData()
         {
             return new RecoloringData(colorRGB, specular, metallic, 1);
+        }
+
+        /// <summary>
+        /// Checks for color property similarity but not flag similarity
+        /// </summary>
+        public static bool operator ==(RecoloringDataPreset one, RecoloringDataPreset two)
+        {
+            return (one.name == two.name &&
+                    one.title == two.title &&
+                    (one.colorRGB == two.colorRGB || one.colorHSV == two.colorHSV) &&
+                    Mathf.Approximately(one.specular, two.specular) &&
+                    Mathf.Approximately(one.metallic, two.metallic));
+        }
+        /// <summary>
+        /// Checks for color property similarity but not flag similarity
+        /// </summary>
+        public static bool operator !=(RecoloringDataPreset one, RecoloringDataPreset two)
+        {
+            return !(one == two);
         }
     }
 
@@ -825,39 +854,91 @@ namespace KSPShaderTools
 
     public class PresetColor
     {
-
+        // Dictionary to map string-based names to HEX10-based names; for outside parts loading default/external preset colors
+        public static Dictionary<string, string> obsoleteColorMap = new Dictionary<string, string>();
         private static List<RecoloringDataPreset> colorList = new List<RecoloringDataPreset>();
-        private static Dictionary<String, RecoloringDataPreset> presetColors = new Dictionary<string, RecoloringDataPreset>();
+        private static Dictionary<string, RecoloringDataPreset> presetColors = new Dictionary<string, RecoloringDataPreset>();
         private static List<RecoloringDataPresetGroup> presetGroupList = new List<RecoloringDataPresetGroup>();
         private static Dictionary<string, RecoloringDataPresetGroup> presetGroups = new Dictionary<string, RecoloringDataPresetGroup>();
         
         
+        // TODO: Add real support for hidden colors - aka recents that don't show up in preset groups
         internal static void loadColors()
         {
             colorList.Clear();
             presetColors.Clear();
-            ConfigNode[] colorNodes = GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET");
-            int len = colorNodes.Length;
-            for (int i = 0; i < len; i++)
+            
+            sanitizePresetsFromPrimaryFile();
+
+            ConfigNode[] masterColorNodes = GameDatabase.Instance.GetConfigNodes("COLOR_MASTER");
+            ConfigNode[] masterGroupNodes = GameDatabase.Instance.GetConfigNodes("GROUP_MASTER");
+
+            if (masterColorNodes.Length > 0)
             {
-                RecoloringDataPreset data = new RecoloringDataPreset(colorNodes[i]);
-                if (!presetColors.ContainsKey(data.name))
+                foreach (var masterColorNode in masterColorNodes)
                 {
-                    presetColors.Add(data.name, data);
-                    colorList.Add(data);
-                    loadPresetIntoGroup(data, "FULL");
+                    
                 }
             }
-            ConfigNode[] groupNodes = GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP");
-            len = groupNodes.Length;
-            for (int i = 0; i < len; i++)
+            
+            ConfigNode[] colorNodes = GameDatabase.Instance.GetConfigNodes("COLOR_MASTER")[0].GetNodes("KSP_COLOR_PRESET");
+            ConfigNode[] groupNodes = GameDatabase.Instance.GetConfigNodes("GROUP_MASTER")[0].GetNodes("PRESET_COLOR_GROUP");
+            ConfigNode[] legacyNodes = GameDatabase.Instance.GetConfigNodes("LEGACY_MASTER")[0].GetNodes("LEGACY_PAIRING");
+            
+            Dictionary<string, RecoloringDataPreset> externalColors = new Dictionary<string, RecoloringDataPreset>();
+            // Check for external sources
+            if (colorNodes.Length != GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET").Length)
             {
-                string name = groupNodes[i].GetStringValue("name");
-                string[] colorNames = groupNodes[i].GetStringValues("color");
-                for (int k = 0; k < colorNames.Length; k++)
+                Log.log($"TexturesUnlimited: External color preset sources detected of #: {GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET").Length} with {colorNodes.Length} internal");
+                
+                ConfigNode[] nodes =  GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET");
+                foreach (var configNode in nodes)
                 {
-                    RecoloringDataPreset data;
-                    if (presetColors.TryGetValue(colorNames[k], out data))
+                    var sanitized = sanitizeColor(configNode);
+                    RecoloringDataPreset preset = new RecoloringDataPreset(sanitized.Item1);
+                    externalColors.Add(configNode.GetValue("name"),  preset);
+                    obsoleteColorMap.TryAdd(configNode.GetValue("name"), sanitized.Item2);
+                    if (!presetColors.TryAdd(sanitized.Item2, preset)) continue;
+                    colorList.Add(preset);
+                    loadPresetIntoGroup(preset, "FULL");
+                }
+            }
+            if (groupNodes.Length != GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length) {
+                Log.log($"TexturesUnlimited: External preset group sources detected of #: {GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length} with {groupNodes.Length} internal");
+                
+                ConfigNode[] nodes = GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP");
+                foreach (var configNode in nodes)
+                {
+                    string name = configNode.GetStringValue("name");
+                    string[] colorNames = configNode.GetStringValues("color");
+                    foreach (var colorName in colorNames)
+                    {
+                        // Attempt to match old name to a RecoloringDataPreset with a HEX10 name, then find color in cache
+                        if (externalColors.TryGetValue(colorName, out var preset) && presetColors.TryGetValue(preset.name, out var data))
+                        {
+                            loadPresetIntoGroup(data, name);
+                        }
+                    }
+                }
+            }
+            
+            
+            foreach (var configNode in colorNodes)
+            {
+                RecoloringDataPreset data = new RecoloringDataPreset(configNode);
+                if (!presetColors.TryAdd(data.name, data)) continue;
+                colorList.Add(data);
+                loadPresetIntoGroup(data, data.isHidden ? "Hidden" : "FULL");
+                if (data.isFavorite) {loadPresetIntoGroup(data, "Favorite");}
+            }
+            
+            foreach (var configNode in groupNodes)
+            {
+                string name = configNode.GetStringValue("name");
+                string[] colorNames = configNode.GetStringValues("color");
+                foreach (var colorName in colorNames)
+                {
+                    if (presetColors.TryGetValue(colorName, out var data))
                     {
                         loadPresetIntoGroup(data, name);
                     }
@@ -865,6 +946,596 @@ namespace KSPShaderTools
             }
         }
 
+
+        public static void deleteColorFromCache(RecoloringDataPreset data)
+        {
+            bool existsAsTitle;
+            // Preset does not exist
+            if (!(existsAsTitle = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select
+                        (presetColors, preset => preset.Value.title)).Contains(data.title)) 
+                && !presetColors.ContainsKey(data.title))
+            {
+                return;
+            }
+
+            // Preset exists as a HEX10 but not in name, replace that HEX10
+            // TODO: overwrite protection
+            if (presetColors.ContainsKey(data.name) && !existsAsTitle)
+            {
+                List<RecoloringDataPreset> presets = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(colorList, recoloringDataPreset => recoloringDataPreset.name != data.name));
+                presetColors.Remove(data.name);
+                
+                List<RecoloringDataPresetGroup> groups = new List<RecoloringDataPresetGroup>();
+                Dictionary<string, RecoloringDataPresetGroup> groupDict =  new Dictionary<string, RecoloringDataPresetGroup>();
+                foreach (var (name,  group) in presetGroups)
+                {
+                    if (group.colors.Contains(data))
+                    {
+                        group.colors.Remove(data);
+                        continue;
+                    }
+                    groups.Add(group);
+                    groupDict.Add(name, group);
+                }
+
+                presetGroups = groupDict;
+                presetGroupList = groups;
+                colorList = presets;
+                return;
+            }
+
+            // Exists as a title but a different HEX10
+            if (!presetColors.ContainsKey(data.name) && existsAsTitle)
+            {
+                string cachedName = "";
+                List<RecoloringDataPreset> presets = new List<RecoloringDataPreset>();
+                Dictionary<string, RecoloringDataPreset> presetDict = new Dictionary<string, RecoloringDataPreset>();
+                foreach (var (name, preset) in presetColors)
+                {
+                    if (preset.title != data.title)
+                    {
+                        presets.Add(preset);
+                        presetDict.Add(name, preset);
+                        continue;
+                    }
+                    cachedName = name;
+                }
+                
+                List<RecoloringDataPresetGroup> groups = new List<RecoloringDataPresetGroup>();
+                Dictionary<string, RecoloringDataPresetGroup> groupDict = new Dictionary<string, RecoloringDataPresetGroup>();
+                foreach (var (name, group) in presetGroups)
+                {
+                    List<RecoloringDataPreset> colors =
+                        System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(group.colors,
+                            preset => preset.name != cachedName));
+                    group.colors = colors;
+                    groups.Add(group);
+                    groupDict.Add(name, group);
+                }
+
+                colorList = presets;
+                presetColors = presetDict;
+                presetGroupList = groups;
+                presetGroups = groupDict;
+                return;
+            }
+
+            // Exists as an identical HEX10 and title (default delete functionality)
+            if (presetColors.ContainsKey(data.name) && existsAsTitle)
+            {
+                List<RecoloringDataPreset> presets = new List<RecoloringDataPreset>();
+                Dictionary<string, RecoloringDataPreset> presetDict = new Dictionary<string, RecoloringDataPreset>();
+                foreach (var (name, preset) in presetColors)
+                {
+                    if (preset.title == data.title) continue;
+                    presets.Add(preset);
+                    presetDict.Add(name, preset);
+                }
+
+                List<RecoloringDataPresetGroup> groups = new List<RecoloringDataPresetGroup>();
+                Dictionary<string, RecoloringDataPresetGroup> groupDict = new Dictionary<string, RecoloringDataPresetGroup>();
+                foreach (var (name, group) in presetGroups)
+                {
+                    List<RecoloringDataPreset> colors =
+                        System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(group.colors,
+                            preset => preset.name != data.name));
+                    group.colors = colors;
+                    groups.Add(group);
+                    groupDict.Add(name, group);
+                }
+
+                colorList = presets;
+                presetColors = presetDict;
+                presetGroupList = groups;
+                presetGroups = groupDict;
+                return;
+            }
+            
+            Log.log("TexturesUnlimited: Attempting to delete a preset that does not exist in any capacity.");
+        }
+        // TODO: reload presets from defaults (remove all customs and re-create all deleted)
+// TODO: overwrite ability
+        /// <summary>
+        /// Creates a new Preset Color in proper cache lists from an existing data preset
+        /// </summary>
+        public static void createColorToCache(RecoloringDataPreset data)
+        {
+            if (!presetColors.TryAdd(data.name, data)) return;
+            colorList.Add(data);
+            if (data.isTemp) return;
+            loadPresetIntoGroup(data, "FULL");
+            loadPresetIntoGroup(data, "Custom");
+            if (data.isFavorite) loadPresetIntoGroup(data, "Favorite");
+        }
+
+        /// <summary>
+        /// Creates a new Preset Color in proper cache lists from an HSVRecoloringData and necessary accessory information
+        /// </summary>
+        public static void createColorToCache(HSVRecoloringData data, string name, string title, bool isFavorite, bool isTemporary, bool isHidden)
+        {
+            var preset = new RecoloringDataPreset()
+            {
+                name = name,
+                title = title,
+                colorHSV = data.color,
+                colorRGB = uColor.toShaderColor(data.color),
+                specular = data.specular,
+                metallic = data.metallic,
+                isFavorite = isFavorite,
+                isHidden = isHidden,
+                isTemp = isTemporary
+            };
+            createColorToCache(preset);
+        }
+
+        /// <summary>
+        /// Takes in a HSVRecoloringData object and an optional display name. Attempts to edit the corresponding cache preset, creates a new one if it doesn't exist
+        /// </summary>
+        /// <returns>True if edited, False if new preset created</returns>
+        public static void editColorFromCache(HSVRecoloringData data, string title = "Unknown")
+        {
+            if (presetColors.TryGetValue(HSVRecoloringData.ConvertToHEXTen(data), out var dataPreset))
+            {
+                editColorFromCache(dataPreset);
+            }
+            createColorToCache(data, HSVRecoloringData.ConvertToHEXTen(data), title, false, false, false);
+        }
+        
+        public static void editColorFromCache(RecoloringDataPreset data)
+        {
+            List<RecoloringDataPreset> oldPresets = new List<RecoloringDataPreset>();
+            foreach (var preset in colorList)
+            {
+                if (preset.title == data.title)
+                {
+                    oldPresets.Add(data);
+                    presetColors.Remove(preset.name);
+                    presetColors.TryAdd(data.name, data);
+                }
+                else
+                {
+                    oldPresets.Add(preset);
+                }
+            }
+            colorList = oldPresets;
+            
+            List<RecoloringDataPreset> oldGroups = new List<RecoloringDataPreset>();
+            foreach (var presetGroup in presetGroupList)
+            {
+                List<RecoloringDataPreset> colors = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(
+                    presetGroup.colors, preset => preset.title == data.title ? data : preset));
+                presetGroup.colors = colors;
+                presetGroups[presetGroup.name] = presetGroup;
+            }
+        }
+
+        public static bool writeColorsToFile()
+        {
+            ConfigNode master = new ConfigNode("KSP_MASTER");
+            ConfigNode primaryColorMaster = GameDatabase.Instance.GetConfigNode("000_TexturesUnlimited/ColorPresets/COLOR_MASTER");
+            ConfigNode primaryGroupMaster = GameDatabase.Instance.GetConfigNode("000_TexturesUnlimited/ColorPresets/GROUP_MASTER");
+
+            // TODO: duplicate protection for these dictionaries
+            Dictionary<string, ConfigNode> colorFromFile = System.Linq.Enumerable.ToDictionary(primaryColorMaster.GetNodes("KSP_COLOR_PRESET"), configNode => configNode.GetValue("name") == string.Empty ? "Custom:"+configNode.GetValue("title") : configNode.GetValue("name"));
+            Dictionary<string, ConfigNode> groupFromFile = System.Linq.Enumerable.ToDictionary(primaryGroupMaster.GetNodes("PRESET_COLOR_GROUP"), configNode => configNode.GetValue("name") == string.Empty ? "full" : configNode.GetValue("name"));
+            
+            List<ConfigNode> colorToFile = new List<ConfigNode>();
+            List<ConfigNode> groupToFile = new List<ConfigNode>();
+
+            foreach (var (name, preset) in presetColors)
+            {
+                if (colorFromFile.TryGetValue(name, out ConfigNode fileNode))
+                {
+                    RecoloringDataPreset filePreset = new RecoloringDataPreset(fileNode);
+                    if (filePreset == preset && (filePreset.isTemp == preset.isTemp &&
+                          filePreset.isHidden == preset.isHidden &&
+                          filePreset.isFavorite == preset.isFavorite))
+                    {
+                        // identical presets
+                        // if (colorToFile.Contains)
+                        colorToFile.Add(fileNode);
+                        continue;
+                    }
+                    if (filePreset == preset)
+                    {
+                        // identical color, but non-identical flags. overwrite
+                        fileNode.SetValue("favorite", preset.isFavorite, true);
+                        fileNode.SetValue("temporary", preset.isTemp, true);
+                        fileNode.SetValue("hidden", preset.isHidden, true);
+                        
+                        colorToFile.Add(fileNode);
+                        continue;
+                    }
+                }
+                // new color
+                fileNode = new ConfigNode("KSP_COLOR_PRESET");
+                fileNode.AddValue("name", preset.name);
+                fileNode.AddValue("title", preset.title);
+                fileNode.AddValue("color", preset.colorRGB);
+                fileNode.AddValue("specular", preset.specular);
+                fileNode.AddValue("metallic", preset.metallic);
+                fileNode.AddValue("isFavorite", preset.isFavorite);
+                fileNode.AddValue("isTemp", preset.isTemp);
+                fileNode.AddValue("isHidden", preset.isHidden);
+                
+                colorToFile.Add(fileNode);
+            }
+            
+            foreach (var (name, group) in presetGroups)
+            {
+                // The preset group FULL should not actually be written to file, it is implied
+                if (name == "FULL") continue;
+                // its possible none of this is needed and should just be created straight from presetGroups
+                if (groupFromFile.TryGetValue(name, out ConfigNode fileNode))
+                {
+                    HashSet<string> fileList = new HashSet<string>(fileNode.GetValuesList("color"));
+                    List<string> cacheList = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(group.colors, recoloringDataPreset => recoloringDataPreset.name));
+                    if (name == fileNode.GetValue("name") && fileList.SetEquals(cacheList))
+                    {
+                        // identical preset group
+                        groupToFile.Add(fileNode);
+                        continue;
+                    }
+                    if (name == fileNode.GetValue("name"))
+                    {
+                        // same preset group
+                        fileNode = new ConfigNode("PRESET_COLOR_GROUP");
+                        fileNode.RemoveValue("color");
+                        foreach (var preset in group.colors)
+                        {
+                            fileNode.AddValue("color", preset.name);
+                        }
+
+                        groupToFile.Add(fileNode);
+                        continue;
+                    }
+                }
+                // new preset
+                fileNode = new ConfigNode("PRESET_COLOR_GROUP");
+                fileNode.SetValue("name", name, true);
+                foreach (var preset in group.colors)
+                {
+                    fileNode.AddValue("color", preset.name);
+                }
+
+                groupToFile.Add(fileNode);
+            }
+            
+            primaryColorMaster.ClearNodes();
+            primaryGroupMaster.ClearNodes();
+            foreach (var node in colorToFile)
+            {
+                primaryColorMaster.AddNode(node);
+            }
+            foreach (var node in groupToFile)
+            {
+                primaryGroupMaster.AddNode(node);
+            }
+
+            // Create a pairwise map from old text-based naming to new HEX10-based naming
+            // Provides support for config files (like parts) that reference old preset names
+            // Should be discouraged in new parts, but possible if working with HEX10s is not desired
+            ConfigNode obsoleteNameMap = new ConfigNode("LEGACY_MASTER");
+            foreach (var (legacy, modern) in obsoleteColorMap)
+            {
+                ConfigNode node = new ConfigNode("LEGACY_PAIRING");
+                node.AddValue("legacy", legacy);
+                node.AddValue("modern", modern);
+                obsoleteNameMap.AddNode(node);
+            }
+            
+            master.AddNode(primaryColorMaster);
+            master.AddNode(primaryGroupMaster);
+            master.AddNode(obsoleteNameMap);
+            GameDatabase.CompileConfig(master);
+            return master.Save(KSPUtil.ApplicationRootPath + "/GameData/000_TexturesUnlimited/ColorPresets.cfg", "KSP_MASTER");
+        }
+
+        /// <summary>
+        /// Takes in a ConfigNode of dubious compliance and returns a 2-tuple without modifying configIn
+        /// </summary>
+        /// <param name="configIn">(ConfigNode)</param>
+        /// <returns>[configOut, cachedName] (ConfigNode, string)</returns>
+        public static (ConfigNode, string) sanitizeColor(ConfigNode configIn)
+        {
+            var configOut = configIn.CreateCopy();
+            string cachedName = HSVRecoloringData.ConvertToHEXTen(new RecoloringDataPreset(configIn));
+            string cachedTitle = configIn.GetStringValue("title", cachedName);
+            int specular = configIn.GetIntValue("specular", 0);
+            int metallic = configIn.GetIntValue("metallic", 0);
+            bool favorite = configIn.GetBoolValue("favorite", false);
+            bool temporary = configIn.GetBoolValue("temporary", false);
+            bool hidden = configIn.GetBoolValue("hidden", false);
+
+            configOut.SetValue("name", cachedName, true);
+            configOut.SetValue("title", cachedTitle, true);
+            configOut.SetValue("specular", specular, true);
+            configOut.SetValue("metallic", metallic, true);
+            configOut.SetValue("favorite", favorite, true);
+            configOut.SetValue("temporary", temporary, true);
+            configOut.SetValue("hidden", hidden, true);
+
+            return (configOut, cachedName);
+        }
+
+        // TODO: the dict TryAdd calls will prevent exceptions on load but results in identical colors being silently deleted with no user output
+        internal static void sanitizePresetsFromPrimaryFile()
+        {
+            ConfigNode master = new ConfigNode("KSP_MASTER");
+            Log.log("TexturesUnlimited: Sanitizing colors in main config file");
+            
+            ConfigNode primaryColorMaster = GameDatabase.Instance.GetConfigNode("000_TexturesUnlimited/ColorPresets/COLOR_MASTER");
+            ConfigNode primaryGroupMaster = GameDatabase.Instance.GetConfigNode("000_TexturesUnlimited/ColorPresets/GROUP_MASTER");
+            ConfigNode primaryLegacyMaster = GameDatabase.Instance.GetConfigNode("000_TexturesUnlimited/ColorPresets/LEGACY_MASTER");
+            
+            Dictionary<string, ConfigNode> colorDict = new Dictionary<string, ConfigNode>(); // ConfigNodes needing updating: writtenName, ConfigNode
+            Dictionary<string, ConfigNode> colorDictCached = new Dictionary<string, ConfigNode>(); // ConfigNodes in format: cachedName, ConfigNode
+            Dictionary<string, ConfigNode> groupDict = new Dictionary<string, ConfigNode>();
+            Dictionary<string, ConfigNode> groupDictCached = new Dictionary<string, ConfigNode>();
+            
+            ConfigNode colorMaster;
+            ConfigNode groupMaster;
+            ConfigNode legacyMaster;
+            
+            if (primaryColorMaster != null)
+            {
+                colorMaster = primaryColorMaster;
+                foreach (var configNode in colorMaster.GetNodes("KSP_COLOR_PRESET"))
+                {
+                    if (!configNode.HasData || !configNode.HasValue("color")) continue;
+                    if (!configNode.HasValue("name"))
+                    {
+                        string str = "";
+                        int spec = 0;
+                        int det = 0;
+                        HSVRecoloringData data = new HSVRecoloringData()
+                        {
+                            color = configNode.TryGetValue("name", ref str) ? Utils.HSVParseColor(str) : uColor.white,
+                            specular = configNode.TryGetValue("specular", ref spec) ? spec : 0,
+                            detail = configNode.TryGetValue("detail", ref det) ? det : 0
+                        };
+                        configNode.AddValue("name", HSVRecoloringData.ConvertToHEXTen(data));
+                    }
+                    if (configNode.GetValue("name").Contains("#") && configNode.GetValue("name").Length == 11)
+                    {
+                        colorDictCached.TryAdd(configNode.GetValue("name"), configNode);
+                        continue;
+                    }
+                    if (configNode.GetColor("color").Equals(Color.clear))
+                    {
+                        // TODO: clean up null colors in some meaningful way other than silently deleting
+                        continue;
+                    }
+
+                    colorDict.TryAdd(configNode.GetValue("name"), configNode);
+                
+                    var configOut = sanitizeColor(configNode);
+
+                    obsoleteColorMap.TryAdd(configNode.GetValue("name"), configOut.Item2);
+                    colorDictCached.TryAdd(configOut.Item2, configOut.Item1);
+                }
+            }
+            else
+            {
+                colorMaster = new ConfigNode("COLOR_MASTER");
+                foreach (var configNode in GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET"))
+                {
+                    if (configNode.GetValue("name").Contains("#") && configNode.GetValue("name").Length == 11)
+                    {
+                        colorDictCached.TryAdd(configNode.GetValue("name"), configNode);
+                        continue;
+                    }
+                    if (configNode.GetColor("color").Equals(Color.clear))
+                    {
+                        // TODO: clean up null colors in some meaningful way other than silently deleting
+                        Log.debug("TexturesUnlimited: Null color in load order");
+                        continue;
+                    }
+
+                    colorDict.TryAdd(configNode.GetValue("name"), configNode);
+                    
+                    var configOut = sanitizeColor(configNode);
+                    
+                    obsoleteColorMap.TryAdd(configNode.GetValue("name"), configOut.Item2);
+                    colorDictCached.TryAdd(configOut.Item2, configOut.Item1);
+                }
+            }
+
+            if (primaryGroupMaster != null)
+            {
+                groupMaster = primaryGroupMaster;
+                foreach (var configNode in groupMaster.GetNodes("PRESET_COLOR_GROUP"))
+                {
+                    if (!configNode.HasData || !configNode.HasValue("color")) continue;
+                    if (!configNode.HasValue("name")) configNode.AddValue("name", "RECOVERED");
+                    string writtenName = configNode.GetValue("name");
+                    groupDict.TryAdd(writtenName, configNode);
+                    string[] colors = configNode.GetValues("color");
+                    List<string> cachedColors = new List<string>();
+                    foreach (var colorName in colors)
+                    {
+                        if (colorName.Contains("#") && colorName.Length == 11)
+                        {
+                            ConfigNode representativeColor = colorDictCached[colorName];
+                            // sanity check - should never return false here and true in foreach
+                            if (representativeColor.GetValue("name") == colorName)
+                            {
+                                cachedColors.Add(colorName);
+                            }
+                            else
+                            {
+                                foreach (var (name, node) in colorDictCached)
+                                {
+                                    if (colorName != HSVRecoloringData.ConvertToHEXTen(new RecoloringDataPreset(node)))
+                                        continue;
+                                    cachedColors.Add(name);
+                                    Log.debug("TexturesUnlimited: Contradictory sanitize result: colorName " + colorName +
+                                                          " does not match with " +
+                                                          representativeColor.GetValue("name") +
+                                                          " but matches with " + name);
+                                    Log.debug("TexturesUnlimited: Comparable HEX10s: (" +
+                                              representativeColor.GetValue("name") +
+                                              "): " +
+                                              HSVRecoloringData.ConvertToHEXTen(
+                                                  new RecoloringDataPreset(representativeColor)) + " (" +
+                                              name +
+                                              "): " + HSVRecoloringData.ConvertToHEXTen(
+                                                  new RecoloringDataPreset(node)));
+                                }
+                            }
+                        }
+                        else
+                        {
+                            ConfigNode representativeColor = colorDict[colorName];
+                            var sanitized = sanitizeColor(representativeColor);
+                            if (colorDictCached.TryGetValue(sanitized.Item2, out ConfigNode sanitizedNode))
+                            {
+                                cachedColors.Add(sanitized.Item2);
+                                continue;
+                            }
+
+                            Log.debug("TexturesUnlimited: Color preset group cannot match " + colorName +
+                                      " to any sanitized of HEX10 " + sanitized.Item2);
+                            // TODO: failed sanitized pull, silent delete?
+                        }
+                    }
+
+                    configNode.RemoveValues("color");
+                    foreach (var cachedColor in cachedColors)
+                    {
+                        configNode.AddValue("color", cachedColor);
+                    }
+
+                    groupDictCached.TryAdd(writtenName, configNode);
+                }
+            }
+            else
+            {
+                groupMaster = new ConfigNode("GROUP_MASTER");
+                foreach (var configNode in GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP"))
+                {
+                    string writtenName = configNode.GetValue("name");
+                    groupDict.TryAdd(writtenName, configNode);
+                    string[] colors = configNode.GetValues("color");
+                    List<string> cachedColors = new List<string>();
+                    foreach (var colorName in colors)
+                    {
+                        if (colorName.Contains("#") && colorName.Length == 11)
+                        {
+                            ConfigNode representativeColor = colorDictCached[colorName];
+                            // sanity check - should never return false here and true in foreach, throw exception if it does
+                            if (representativeColor.GetValue("name") == colorName)
+                            {
+                                cachedColors.Add(colorName);
+                            }
+                            else
+                            {
+                                foreach (var (name, node) in colorDictCached)
+                                {
+                                    if (colorName != HSVRecoloringData.ConvertToHEXTen(new RecoloringDataPreset(node)))
+                                        continue;
+                                    cachedColors.Add(name);
+                                    Log.exception("Contradictory sanitize result: colorName " + colorName +
+                                                          " does not match with " +
+                                                          representativeColor.GetValue("name") +
+                                                          " but matches with " + name);
+                                    Log.exception("Comparable HEX10s: (" +
+                                                          representativeColor.GetValue("name") +
+                                                          "): " +
+                                                          HSVRecoloringData.ConvertToHEXTen(
+                                                              new RecoloringDataPreset(representativeColor)) + " (" +
+                                                          name +
+                                                          "): " + HSVRecoloringData.ConvertToHEXTen(
+                                                              new RecoloringDataPreset(node)));
+                                }
+                            }
+                        }
+                        else
+                        {
+                            ConfigNode representativeColor = colorDict[colorName];
+                            var sanitized = sanitizeColor(representativeColor);
+                            if (colorDictCached.TryGetValue(sanitized.Item2, out ConfigNode sanitizedNode))
+                            {
+                                cachedColors.Add(sanitized.Item2);
+                                continue;
+                            }
+
+                            Log.debug("TexturesUnlimited: Color preset group cannot match " + colorName +
+                                      " to any sanitized of HEX10 " + sanitized.Item2);
+                            // TODO: failed sanitized pull, silent delete?
+                        }
+                    }
+
+                    configNode.RemoveValues("color");
+                    foreach (var cachedColor in cachedColors)
+                    {
+                        configNode.AddValue("color", cachedColor);
+                    }
+
+                    groupDictCached.TryAdd(writtenName, configNode);
+                }
+            }
+
+            if (primaryLegacyMaster != null)
+            {
+                legacyMaster = primaryLegacyMaster;
+                foreach (var configNode in legacyMaster.GetNodes("LEGACY_PAIRING"))
+                {
+                    obsoleteColorMap.TryAdd(configNode.GetValue("legacy"), configNode.GetValue("modern"));
+                }
+            }
+            else
+            {
+                legacyMaster = new ConfigNode("LEGACY_MASTER");
+            }
+
+            colorMaster.ClearNodes();
+            groupMaster.ClearNodes();
+            legacyMaster.ClearNodes();
+            foreach (var (name, node) in colorDictCached)
+            {
+                colorMaster.AddNode(node);
+            }
+            foreach (var (name, node) in groupDictCached)
+            {
+                groupMaster.AddNode(node);
+            }
+            foreach (var (legacy, modern) in obsoleteColorMap)
+            {
+                ConfigNode node = new ConfigNode("LEGACY_PAIRING");
+                node.AddValue("legacy",  legacy);
+                node.AddValue("modern", modern);
+                legacyMaster.AddNode(node);
+            }
+            master.AddNode(colorMaster);
+            master.AddNode(groupMaster);
+            master.AddNode(legacyMaster);
+            GameDatabase.CompileConfig(master);
+            bool saved = master.Save(KSPUtil.ApplicationRootPath + "/GameData/000_TexturesUnlimited/ColorPresets.cfg", "KSP_MASTER");
+            Log.log("TexturesUnlimited: MasterNode saved("+saved+") to " + (KSPUtil.ApplicationRootPath + "/GameData/000_TexturesUnlimited/ColorPresets.cfg") + " of count " + (colorMaster.CountNodes
+                +"/"+ groupMaster.CountNodes));
+        }
+        
         internal static void loadPresetIntoGroup(RecoloringDataPreset preset, string group)
         {
             RecoloringDataPresetGroup colors;
