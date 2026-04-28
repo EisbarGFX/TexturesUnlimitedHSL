@@ -873,23 +873,18 @@ namespace KSPShaderTools
             ConfigNode[] masterColorNodes = GameDatabase.Instance.GetConfigNodes("COLOR_MASTER");
             ConfigNode[] masterGroupNodes = GameDatabase.Instance.GetConfigNodes("GROUP_MASTER");
 
-            if (masterColorNodes.Length > 0)
-            {
-                foreach (var masterColorNode in masterColorNodes)
-                {
-                    
-                }
-            }
-            
-            ConfigNode[] colorNodes = GameDatabase.Instance.GetConfigNodes("COLOR_MASTER")[0].GetNodes("KSP_COLOR_PRESET");
-            ConfigNode[] groupNodes = GameDatabase.Instance.GetConfigNodes("GROUP_MASTER")[0].GetNodes("PRESET_COLOR_GROUP");
-            ConfigNode[] legacyNodes = GameDatabase.Instance.GetConfigNodes("LEGACY_MASTER")[0].GetNodes("LEGACY_PAIRING");
-            
-            Dictionary<string, RecoloringDataPreset> externalColors = new Dictionary<string, RecoloringDataPreset>();
+            ConfigNode primaryMasterColorNode =
+                GameDatabase.Instance.GetConfigNode("000_TexturesUnlimited/ColorPresets/COLOR_MASTER");
+            ConfigNode primaryMasterGroupNode = 
+                GameDatabase.Instance.GetConfigNode("000_TexturesUnlimited/ColorPresets/COLOR_MASTER");
+
             // Check for external sources
-            if (colorNodes.Length != GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET").Length)
+            Dictionary<string, RecoloringDataPreset> externalColors = new Dictionary<string, RecoloringDataPreset>();
+            if (GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET").Length != 0)
             {
-                Log.log($"TexturesUnlimited: External color preset sources detected of #: {GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET").Length} with {colorNodes.Length} internal");
+                Log.log($"TexturesUnlimited: External color preset sources detected of #: " +
+                        $"{GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET").Length} with " +
+                        $"{(primaryMasterColorNode != null ? primaryMasterColorNode.GetNodes("KSP_COLOR_PRESET").Length.ToString() : "0")} internal");
                 
                 ConfigNode[] nodes =  GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET");
                 foreach (var configNode in nodes)
@@ -903,8 +898,11 @@ namespace KSPShaderTools
                     loadPresetIntoGroup(preset, "FULL");
                 }
             }
-            if (groupNodes.Length != GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length) {
-                Log.log($"TexturesUnlimited: External preset group sources detected of #: {GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length} with {groupNodes.Length} internal");
+            
+            
+            if (GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length != 0) {
+                Log.log($"TexturesUnlimited: External preset group sources detected of #: {GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP").Length} with "+
+                $"{(primaryMasterGroupNode != null ? primaryMasterGroupNode.GetNodes("KSP_COLOR_PRESET").Length.ToString() : "0")} internal");
                 
                 ConfigNode[] nodes = GameDatabase.Instance.GetConfigNodes("PRESET_COLOR_GROUP");
                 foreach (var configNode in nodes)
@@ -923,24 +921,40 @@ namespace KSPShaderTools
             }
             
             
-            foreach (var configNode in colorNodes)
-            {
-                RecoloringDataPreset data = new RecoloringDataPreset(configNode);
-                if (!presetColors.TryAdd(data.name, data)) continue;
-                colorList.Add(data);
-                loadPresetIntoGroup(data, data.isHidden ? "Hidden" : "FULL");
-                if (data.isFavorite) {loadPresetIntoGroup(data, "Favorite");}
-            }
             
-            foreach (var configNode in groupNodes)
+            
+            if (masterColorNodes.Length > 0)
             {
-                string name = configNode.GetStringValue("name");
-                string[] colorNames = configNode.GetStringValues("color");
-                foreach (var colorName in colorNames)
+                foreach (var masterColorNode in masterColorNodes)
                 {
-                    if (presetColors.TryGetValue(colorName, out var data))
+                    ConfigNode[] colorNodes = masterColorNode.GetNodes("KSP_COLOR_PRESET");
+                    foreach (var configNode in colorNodes)
                     {
-                        loadPresetIntoGroup(data, name);
+                        RecoloringDataPreset data = new RecoloringDataPreset(configNode);
+                        if (!presetColors.TryAdd(data.name, data)) continue;
+                        colorList.Add(data);
+                        loadPresetIntoGroup(data, data.isHidden ? "Hidden" : "FULL");
+                        if (data.isFavorite) {loadPresetIntoGroup(data, "Favorite");}
+                    }
+                }
+            }
+
+            if (masterGroupNodes.Length > 0)
+            {
+                foreach (var masterGroupNode in masterGroupNodes)
+                {
+                    ConfigNode[] groupNodes = masterGroupNode.GetNodes("PRESET_COLOR_GROUP");
+                    foreach (var configNode in groupNodes)
+                    {
+                        string name = configNode.GetStringValue("name");
+                        string[] colorNames = configNode.GetStringValues("color");
+                        foreach (var colorName in colorNames)
+                        {
+                            if (presetColors.TryGetValue(colorName, out var data))
+                            {
+                                loadPresetIntoGroup(data, name);
+                            }
+                        }
                     }
                 }
             }
