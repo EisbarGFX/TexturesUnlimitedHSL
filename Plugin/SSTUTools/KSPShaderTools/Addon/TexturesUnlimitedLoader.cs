@@ -886,9 +886,10 @@ namespace KSPShaderTools
             Dictionary<string, RecoloringDataPreset> externalColors = new Dictionary<string, RecoloringDataPreset>();
             if (GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET").Length != 0)
             {
+                int count;
                 Log.log($"TexturesUnlimited: External color preset sources detected of #: " +
-                        $"{GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET").Length} with " +
-                        $"{(primaryMasterColorNode != null ? primaryMasterColorNode.GetNodes("KSP_COLOR_PRESET").Length.ToString() : "0")} internal");
+                        $"{count = GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET").Length} with " +
+                        $"{(primaryMasterColorNode != null ? (primaryMasterColorNode.GetNodes("KSP_COLOR_PRESET").Length - count).ToString() : "0")} internal");
                 
                 ConfigNode[] nodes =  GameDatabase.Instance.GetConfigNodes("KSP_COLOR_PRESET");
                 foreach (var configNode in nodes)
